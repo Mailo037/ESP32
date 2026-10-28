@@ -12,7 +12,7 @@ Dieser Branch ist ein eigenstaendiges Service-Projekt. `api/`, `lib/`,
 
 1. Den lokalen Branch zuerst nach GitHub veroeffentlichen:
    `git push -u origin service` (im Ordner `esp-service`).
-2. In Vercel das Repository `Mailo037/ESP32-Programme` verbinden oder beim
+2. In Vercel das Repository `Mailo037/ESP32` verbinden oder beim
    bestehenden Projekt die Einstellungen anpassen.
 3. **Root Directory:** Repository-Stamm (`.`); einen bisherigen Eintrag
    `Hub/vercel` entfernen. **Framework Preset:** Other. Build und Output
@@ -120,7 +120,7 @@ Environment Variables*. Nicht ins Repo, nicht in den Chat, nicht aufs Board.
 | `FIREBASE_SERVICE_ACCOUNT` | ja | kompletter Inhalt der Dienstkonto-JSON (siehe unten), Typ **Sensitive** |
 | `ADMIN_TOKEN` | ja | dein Admin-Passwort, mindestens 8 Zeichen, lang und zufällig, Typ **Sensitive** |
 | `HUB_TOKEN` | nein | zusätzliches Passwort für die Boards (`auth` in `hub_online.json`) |
-| `GITHUB_REPO` / `GITHUB_BRANCH` | nein | Quelle des App-Stores (`Mailo037/ESP32-Programme` / `programs`) |
+| `GITHUB_REPO` / `GITHUB_BRANCH` | nein | Quelle des App-Stores (`Mailo037/ESP32` / `programs`) |
 | `GITHUB_TOKEN` | nein | nur bei sehr vielen Abrufen (GitHub-Limit) |
 
 Nach dem Ändern von Variablen einmal neu deployen: *Deployments → … → Redeploy*.
