@@ -1,4 +1,4 @@
-# ESP-Hub v2.0 – Spiele-Galerie mit App-Store für das espBoard
+# ESP-Hub v2.1.0 – Spiele-Galerie mit App-Store für das espBoard
 
 Auf dem Board liegt der Hub als `main.py`, jedes Spiel ist eine eigene Datei
 `gal_<Name>.py`. Nach dem Einschalten erscheint die Galerie. Neue Spiele
@@ -53,6 +53,67 @@ Das kopiert den Hub (`main.py`, `hub_apps.py`, `hub_galerie.py`, `hub_online.py`
 dieser Branch enthaelt keine Spiele. Optional lassen sich eigene `.py`-Dateien
 hinter dem Port angeben. Liegt
 `hub_online.json` da, kopiert das Skript sie mit.
+
+## Firmware-Version und WLAN-Updates
+
+Die installierte Hub-Firmware-Version steht in `hub_version.json` und in
+Board-Info. Das ist die Version des Python-Hubs, nicht der MicroPython-Laufzeit.
+
+Bestehende Boards einmal mit `python installieren.py COM3` aktualisieren.
+Dabei werden auch der stabile Wiederanlauf-Code `boot.py`, der Updater und
+die gemeinsamen Treiber `ssd1306.py` und `bmp280.py` installiert.
+Die vorhandene `hub_online.json` muss auf dem Board WLAN und Service-URL
+enthalten. Danach benoetigen weitere Hub-Releases kein USB-Kabel.
+
+Beim Betreten der Galerie prueft der Hub online auf die aktive Firmware.
+Bei einer neueren Version erscheint zuerst **HUB-UPDATE** mit alter/neuer
+Version und **Installieren / Spaeter**. Offline bleibt die Galerie nutzbar.
+In der Galerie erfolgt nach fuenf Minuten eine erneute Pruefung; unter
+Board-Info kann sie ueber den Eintrag **Hub v...** manuell gestartet werden.
+Ein laufendes Spiel wird fuer ein Update nicht unterbrochen.
+
+Ein Update wird erst vollstaendig nach `/hubupdate` geladen, auf Groesse und
+SHA-256 geprueft und als Python-Code kompiliert. Erst danach entsteht die
+Commit-Markierung. Beim Neustart uebernimmt `boot.py` die Dateien. Ein
+Stromausfall waehrend der Uebernahme wird beim naechsten Boot fortgesetzt;
+die vollstaendig geladenen Quelldateien bleiben bis zum Abschluss erhalten.
+Spiele, Konten-Konfiguration, Board-Schluessel und Spielstaende werden dabei
+nicht ersetzt. Bei beschaedigtem Update-Speicher wird der Hub-Start gestoppt,
+statt eine Mischung verschiedener Versionen auszufuehren.
+
+### Release fuer den Admin erstellen
+
+1. Code pruefen und die Version in `hub_version.json` erhoehen (X.Y.Z).
+2. `python release_erstellen.py` ausfuehren.
+3. Die erzeugte `releases/esp-hub-X.Y.Z.zip` im Service-Admin unter
+   **Firmware** mit derselben Version und Versionshinweisen hochladen.
+4. Den neuen Release dort mit **Veroeffentlichen** aktivieren.
+
+Das Erstellen allein schaltet noch kein Update frei. Veroeffentlichungen sind
+auf aufsteigende Versionen beschraenkt. `boot.py` ist absichtlich nicht im
+OTA-Paket; Aenderungen an diesem Wiederanlauf-Code erfordern den USB-Installer.
+
+## ZIP-Projekte und gemeinsame Treiber
+
+Projekte im Portal oder Admin als eine ZIP mit `main.py`, Zusatzmodulen und
+Assets hochladen. Ein aeusserer Projektordner wird akzeptiert. Bis zu 128
+Archiveintraege und 512 KB entpackter Inhalt sind erlaubt.
+
+Installierte ZIP-Projekte liegen unter `/apps/<ID>/`; der App-Ordner und sein
+`lib`-Unterordner sind beim Start im Modulpfad. Relative Lesezugriffe suchen
+zuerst im Spielstand und dann in den Projekt-Assets. Schreibzugriffe bleiben
+bei `/daten/<ID>/`. Alte einzelne `gal_*.py`-Apps bleiben startbar.
+
+Der Hub bringt `ssd1306.py` und `bmp280.py` bereits mit. Werden dieselben
+Dateien im Projektstamm oder in `lib/` mit hochgeladen, entfernt der Server
+sie **nur bei identischem SHA-256-Hash** aus dem App-Paket. Sie werden nicht
+erneut gespeichert, geladen oder als App-Bytes gezaehlt. Abweichende Treiber
+bleiben privat im Projekt erhalten. Das Board prueft gemeinsame Treiber vor
+der Installation; falls noetig muss zuerst die passende Hub-Firmware geladen
+werden. ZIP-Projekte werden ueber das Portal hochgeladen; der bisherige
+Upload vom Board bleibt fuer einzelne lokale `gal_*.py`-Dateien verfuegbar.
+
+Tests ohne Hardware: `python -m unittest discover -s tests -v`.
 
 ## Online: Vercel-Bridge + Firebase
 

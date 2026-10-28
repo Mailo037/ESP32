@@ -216,6 +216,8 @@ class Netz:
         """Lokale App ins Konto laden (ziel "privat") oder zur Pruefung."""
         import hub_apps
         datei = hub_apps.datei(name)
+        if datei.startswith(hub_apps.PAKETE + "/"):
+            raise OSError("ZIP-Projekte im Portal hochladen")
         with open(datei, "rb") as f:
             code = f.read()
         r = self._anfrage("POST", self._url(self.k["url"], "hochladen") + "&ziel=" + ziel + "&datei=gal_" + name + ".py",
@@ -260,7 +262,24 @@ class Netz:
         pruefen - die ganze Datei passt nicht unbedingt in den RAM."""
         import hashlib
         import binascii
-        r = self._anfrage("GET", self._url(self.k.get("store") or self.k["url"], "apps/" + app["id"]))
+        return self.datei_laden("apps/" + app["id"], ziel, app, fortschritt)
+
+    def firmware(self):
+        r = self._anfrage("GET", self._url(self.k["url"], "firmware"))
+        try:
+            if r.status_code == 404:
+                return None
+            if r.status_code >= 300:
+                raise self._fehler(r, "Firmware")
+            return r.json().get("firmware")
+        finally:
+            r.close()
+
+    def datei_laden(self, pfad, ziel, app, fortschritt=None, extra=""):
+        import hashlib
+        import binascii
+        basis = self.k["url"] if pfad.startswith("firmware/") else (self.k.get("store") or self.k["url"])
+        r = self._anfrage("GET", self._url(basis, pfad) + extra)
         try:
             if r.status_code >= 300:
                 raise self._fehler(r, "Store")

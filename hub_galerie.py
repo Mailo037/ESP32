@@ -148,7 +148,13 @@ def galerie(start_datei, neustart):
 
     zeichnen()
     ein.warte_los()       # ein noch gehaltenes S4+S5 loest nichts aus
+    firmware_check = time.ticks_ms()
     while True:
+        if time.ticks_diff(time.ticks_ms(), firmware_check) >= 300000:
+            import hub_update
+            hub_update.pruefen()
+            firmware_check = time.ticks_ms()
+            zeichnen()
         e = ein.lesen()
         if e in ("hoch", "runter"):
             wahl = (wahl + (-1 if e == "hoch" else 1)) % len(eintraege)
@@ -245,6 +251,9 @@ def installieren(oled, apps, netz=None):
             netz = hub_online.Netz(hub_online.konfig_lesen())
             netz.verbinden()
         for a in apps:
+            if a.get("dateien"):
+                paket_installieren(netz, a, oled)
+                continue
             # Platz fuer die neue Datei (+ Reserve) muss da sein, die alte
             # Version wird erst nach erfolgreichem Download ersetzt
             if ha.frei() < a["groesse"] + 8192:
@@ -252,11 +261,12 @@ def installieren(oled, apps, netz=None):
                 time.sleep_ms(2000)
                 return False
             ha.meldung(oled, "Lade", a["name"][:16], "v" + a["version"])
-            ziel = ha.datei(a["id"])
+            ha.paketpfad(a["id"])  # validate the ID for legacy entries too
+            ziel = "/gal_" + a["id"] + ".py"
             netz.app_laden(a, ziel + ".neu", lambda x: ha.balken(oled, 54, x))
-            ha.loeschen(ziel)
             import os
             os.rename(ziel + ".neu", ziel)
+            ha.loeschen(ha.paketpfad(a["id"]))
             ha.installiert_merken(a["id"], a["sha256"])     # vertrauenswuerdig
         ha.meldung(oled, "Fertig!", "%d App%s" % (len(apps), "" if len(apps) == 1 else "s"))
         time.sleep_ms(900)
@@ -268,6 +278,67 @@ def installieren(oled, apps, netz=None):
     finally:
         if eigenes_netz and netz is not None:
             netz.trennen()
+
+
+def paket_installieren(netz, app, oled):
+    import os
+    import json
+    name = app["id"]
+    target = ha.paketpfad(name)
+    stage = ha.PAKETE + "/.neu_" + name
+    old = ha.PAKETE + "/.alt_" + name
+    files = app["dateien"]
+    if not 0 < len(files) <= 128 or len(app.get("paket", "")) != 64 or any(c not in "0123456789abcdef" for c in app["paket"]):
+        raise ValueError("App-Manifest ungueltig")
+    seen = set()
+    total = 0
+    for d in files:
+        p = d.get("name", "")
+        if not p or p in seen or p == "manifest.json" or any(not part or part in (".", "..") or any(c not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-" for c in part) for part in p.split("/")):
+            raise ValueError("App-Dateipfad ungueltig")
+        if not isinstance(d.get("groesse"), int) or not 0 <= d["groesse"] <= 512 * 1024:
+            raise ValueError("App-Dateigroesse ungueltig")
+        seen.add(p)
+        total += d["groesse"]
+    if "main.py" not in seen or total > 512 * 1024:
+        raise ValueError("App-Paket ungueltig")
+    for d in app.get("geteilt", []):
+        if d.get("name") not in ("ssd1306.py", "bmp280.py") or ha.pruefsumme("/" + d["name"]) != d["sha256"]:
+            raise ValueError("Zuerst Hub updaten: Treiber")
+    ha.loeschen(stage)
+    if ha.frei() < total + 16384:
+        raise OSError("Zu wenig Flash")
+    try:
+        os.mkdir(ha.PAKETE)
+    except OSError:
+        pass
+    os.mkdir(stage)
+    for i, d in enumerate(files):
+        parts = d["name"].split("/")
+        parent = stage
+        for part in parts[:-1]:
+            parent += "/" + part
+            try:
+                os.mkdir(parent)
+            except OSError:
+                pass
+        ha.meldung(oled, "App installieren", d["name"][:16])
+        netz.datei_laden("apps/" + name, stage + "/" + d["name"], d,
+                         lambda x: ha.balken(oled, 54, (i + x) / len(files)),
+                         "&datei=" + d["name"] + "&paket=" + app["paket"])
+    with open(stage + "/manifest.json", "w") as f:
+        json.dump(app, f)
+    ha.loeschen(old)
+    try:
+        os.stat(target)
+    except OSError:
+        pass
+    else:
+        os.rename(target, old)
+    os.rename(stage, target)
+    ha.loeschen(old)
+    ha.loeschen("/gal_" + name + ".py")
+    ha.installiert_merken(name, app["sha256"])
 
 
 def store(oled, ein, ton):
@@ -458,12 +529,15 @@ def info(oled, ein):
         zeilen = ["ID " + hub_online.board_id(),
                   "Flash " + ha.kb(ha.frei()) + " RAM " + ha.kb(gc.mem_free()),
                   status or (("Konto: " + konto) if konto else ("Online: an" if k else "Online: aus"))]
-        punkte = (["Jetzt abgleichen", "Koppeln", "Verbindung testen"] if k else []) + ["Zurueck"]
+        punkte = (["Hub v" + ha.HUB_VERSION, "Jetzt abgleichen", "Koppeln", "Verbindung testen"] if k else ["Hub v" + ha.HUB_VERSION]) + ["Zurueck"]
         w = ha.menue(oled, ein, "BOARD #%04d" % hub_online.board_nr(), zeilen, punkte)
         if w < 0 or punkte[w] == "Zurueck":
             return
         status = ""
-        if punkte[w] == "Koppeln":
+        if punkte[w].startswith("Hub v"):
+            import hub_update
+            hub_update.pruefen()
+        elif punkte[w] == "Koppeln":
             koppeln(oled, ein)
         elif punkte[w] == "Jetzt abgleichen":
             status = "Abgleich OK" if auftraege_ausfuehren(oled) else "Abgleich Fehler"

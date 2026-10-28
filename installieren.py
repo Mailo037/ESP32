@@ -31,7 +31,7 @@ def main():
     args = sys.argv[1:]
     port = args.pop(0) if args and not args[0].endswith(".py") else "auto"
 
-    kopien = [(HUB / n, n) for n in ("main.py", "hub_apps.py", "hub_galerie.py", "hub_online.py", "ssd1306.py")]
+    kopien = [(HUB / n, n) for n in ("boot.py", "main.py", "hub_apps.py", "hub_galerie.py", "hub_online.py", "hub_update.py", "ssd1306.py", "bmp280.py", "hub_version.json")]
     if (HUB / "hub_online.json").exists():          # Online-Speicher (nicht im Repo)
         kopien.append((HUB / "hub_online.json", "hub_online.json"))
     for ordner in sorted(REPO.iterdir()):

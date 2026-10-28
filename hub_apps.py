@@ -14,13 +14,15 @@ import os
 import time
 from machine import Pin, ADC
 
-HUB_VERSION = "2.0"
+with open("/hub_version.json") as _version:
+    HUB_VERSION = json.load(_version)["version"]
 PRAEFIX = "gal_"
 DATEN = "/daten"
 CACHE = "/hubdaten"
 NUTZUNG = CACHE + "/_nutzung.json"
 INSTALLIERT = CACHE + "/_installiert.json"   # Pruefsummen vertrauenswuerdiger Apps
-HUB_DATEIEN = ("main.py", "hub_apps.py", "hub_galerie.py", "hub_online.py", "ssd1306.py")
+PAKETE = "/apps"
+HUB_DATEIEN = ("main.py", "hub_apps.py", "hub_galerie.py", "hub_online.py", "hub_update.py", "ssd1306.py", "bmp280.py", "hub_version.json")
 TASTEN_AKTIV_HIGH = True
 AN = 1 if TASTEN_AKTIV_HIGH else 0
 
@@ -31,12 +33,44 @@ AN = 1 if TASTEN_AKTIV_HIGH else 0
 def apps():
     l = [d[len(PRAEFIX):-3] for d in os.listdir("/")
          if d.startswith(PRAEFIX) and d.endswith(".py")]
-    l.sort(key=lambda n: anzeigename(n).lower())
-    return l
+    try:
+        for n in os.listdir(PAKETE):
+            if gueltige_id(n) and groesse(PAKETE + "/" + n + "/main.py"):
+                l.append(n)
+    except OSError:
+        pass
+    return sorted(set(l), key=lambda n: anzeigename(n).lower())
 
 
 def datei(name):
+    paket = PAKETE + "/" + name + "/main.py"
+    if groesse(paket):
+        return paket
     return "/" + PRAEFIX + name + ".py"
+
+
+def gueltige_id(name):
+    return 0 < len(name) <= 40 and all(c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_" for c in name)
+
+
+def paketpfad(name):
+    if not gueltige_id(name):
+        raise ValueError("App-ID ungueltig")
+    return PAKETE + "/" + name
+
+
+def pakete_retten():
+    try:
+        names = os.listdir(PAKETE)
+    except OSError:
+        return
+    for n in names:
+        if n.startswith(".alt_") and gueltige_id(n[5:]):
+            target = paketpfad(n[5:])
+            if groesse(target + "/main.py"):
+                loeschen(PAKETE + "/" + n)
+            else:
+                os.rename(PAKETE + "/" + n, target)
 
 
 def anzeigename(name):
@@ -127,6 +161,14 @@ def vertraut(name, sha=None):
     sha = sha or pruefsumme(datei(name))
     if not sha:
         return False
+    if datei(name).startswith(PAKETE + "/"):
+        try:
+            with open(paketpfad(name) + "/manifest.json") as f:
+                meta = json.load(f)
+            if any(pruefsumme(paketpfad(name) + "/" + d["name"]) != d["sha256"] for d in meta["dateien"]):
+                return False
+        except (OSError, ValueError, KeyError):
+            return False
     if installiert_lesen().get(name) == sha:
         return True
     try:
@@ -153,7 +195,8 @@ def groesse(pfad):
 
 def app_groessen(name):
     """(App, Spielstand) in Bytes."""
-    return groesse(datei(name)), groesse(DATEN + "/" + name) + groesse(CACHE + "/" + name + ".json")
+    code = groesse(paketpfad(name)) if datei(name).startswith(PAKETE + "/") else groesse(datei(name))
+    return code, groesse(DATEN + "/" + name) + groesse(CACHE + "/" + name + ".json")
 
 
 def frei():
@@ -200,6 +243,8 @@ def app_loeschen(name):
     """Deinstallieren. Der Online-Spielstand bleibt - nach einer
     Neuinstallation ist er wieder da."""
     loeschen(datei(name))
+    loeschen(paketpfad(name))
+    loeschen("/" + PRAEFIX + name + ".py")
     loeschen(DATEN + "/" + name)
     installiert_merken(name, None)
 

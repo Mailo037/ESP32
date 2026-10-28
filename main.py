@@ -1,5 +1,5 @@
 # =====================================================================
-#  ESP-HUB v2.0 - Spiele-Galerie mit App-Store fuer das BZTG espBoard
+#  ESP-HUB - versionierte Firmware mit App-Store fuer das BZTG espBoard
 # =====================================================================
 #  Auf dem Board liegt nur dieser Hub als main.py. Jedes Spiel ist eine
 #  eigene Datei "gal_<Name>.py" - neue Spiele kommen per Hochladen oder
@@ -27,6 +27,8 @@
 import gc
 import os
 import sys
+if getattr(sys, "_hub_update_fehler", False):
+    raise RuntimeError("Hub-Update muss vor dem Start fortgesetzt werden")
 import machine
 import time
 from machine import Pin
@@ -107,7 +109,14 @@ class _Sandbox:
         return self.basis + ("/" + "/".join(teile) if teile else "")
 
     def oeffnen(self, p, *a, **k):
-        return _open(self.pfad(p), *a, **k)
+        mode = a[0] if a else k.get("mode", "r")
+        path = self.pfad(p)
+        if not any(c in mode for c in "wax+"):
+            try:
+                return _open(path, *a, **k)
+            except OSError:
+                return _open(hub_apps.paketpfad(self.name) + path[len(self.basis):], *a, **k)
+        return _open(path, *a, **k)
 
     def os_modul(self):
         m = _Modul()
@@ -270,6 +279,13 @@ class _Sandbox:
         ssd1306.SSD1306.__init__ = init
 
     def einrichten(self, hub_api):
+        self.pfade_vorher = list(sys.path)
+        paket = hub_apps.paketpfad(self.name)
+        sys.path.insert(0, paket + "/lib")
+        sys.path.insert(0, paket)
+        for driver in ("ssd1306", "bmp280"):
+            if hub_apps.groesse(paket + "/" + driver + ".py") or hub_apps.groesse(paket + "/lib/" + driver + ".py"):
+                sys.modules.pop(driver, None)
         self.module_vorher = set(sys.modules)     # was das Spiel selbst laedt, zaehlt
         self.display_merken()
         z = self.zeit_modul()
@@ -278,7 +294,7 @@ class _Sandbox:
         self.vorher = {}
         for n, m in (("time", z), ("utime", z), ("os", o), ("uos", o), ("hub", hub_api),
                      ("main", gesperrt), ("hub_online", gesperrt), ("hub_apps", gesperrt),
-                     ("hub_galerie", gesperrt)):
+                     ("hub_galerie", gesperrt), ("hub_update", gesperrt), ("boot", gesperrt)):
             self.vorher[n] = sys.modules.get(n)
             if m is None:
                 sys.modules.pop(n, None)    # lokale App: "import hub" schlaegt fehl
@@ -286,6 +302,7 @@ class _Sandbox:
                 sys.modules[n] = m
 
     def aufraeumen(self):
+        sys.path[:] = self.pfade_vorher
         for n, m in self.vorher.items():
             if m is None:
                 sys.modules.pop(n, None)
@@ -380,6 +397,7 @@ def fehler_zeigen(name, e):
 #  START
 # =====================================================================
 def main():
+    hub_apps.pakete_retten()
     name = lies(START_DATEI)
     if name:
         # Startauftrag sofort loeschen: stuerzt das Spiel ab oder wird
@@ -391,6 +409,8 @@ def main():
         if name in hub_apps.apps():
             spiel_starten(name)
             return
+    import hub_update
+    hub_update.pruefen()
     import hub_galerie
     hub_galerie.galerie(START_DATEI, neustart)
 
