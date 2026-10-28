@@ -1,13 +1,13 @@
-# Kopiert den ESP-Hub und alle Spiele aus diesem Repo auf ein espBoard.
+# Kopiert die ESP-Hub-Firmware und explizit angegebene Spiele auf ein espBoard.
 #
 #   pip install mpremote
-#   python Hub/installieren.py              (Port automatisch suchen)
-#   python Hub/installieren.py COM3         (Windows)
-#   python Hub/installieren.py /dev/ttyUSB0 mein_spiel.py
+#   python installieren.py              (Port automatisch suchen)
+#   python installieren.py COM3         (Windows)
+#   python installieren.py /dev/ttyUSB0 mein_spiel.py
 #
 # Aus jedem Ordner mit main.py wird gal_<Ordner>.py, z. B.
 # ESP-Pong/main.py -> gal_ESP_Pong.py. Weitere .py-Dateien hinter dem Port
-# kommen ebenfalls als gal_<Name>.py dazu. Liegt Hub/hub_online.json da
+# kommen ebenfalls als gal_<Name>.py dazu. Liegt hub_online.json da
 # (Vorlage: hub_online.beispiel.json), wird sie mitkopiert und der Hub
 # speichert online. Thonny vorher schliessen.
 import hashlib
@@ -17,8 +17,8 @@ import re
 import subprocess
 import sys
 
-REPO = pathlib.Path(__file__).resolve().parent.parent
-HUB = REPO / "Hub"
+REPO = pathlib.Path(__file__).resolve().parent
+HUB = REPO
 OHNE = {"Hub", "simulator", "docs"}
 
 
