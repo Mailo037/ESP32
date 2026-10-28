@@ -1,7 +1,0 @@
-{
-  "name": "esphub",
-  "private": true,
-  "type": "module",
-  "description": "Backend fuer den ESP-Hub: Online-Speicher (Firebase) und App-Store (GitHub)",
-  "engines": { "node": ">=18" }
-}
