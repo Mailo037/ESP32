@@ -84,6 +84,7 @@ async function ladeProgrammliste() {
       quelle.apps = new Map(data.apps.map((app) => [app.id, app]));
       quelle.ordner = data.apps.slice().sort((a,b) => a.name.localeCompare(b.name, "de")).map((a) => a.id);
       status.textContent = `${data.apps.length} Online-Apps · ${data.angemeldet ? "inklusive deiner privaten Apps" : "öffentlicher App-Store"}`;
+      if (data.hinweis) { status.textContent += " · " + data.hinweis; status.classList.add("fehler"); }
       zeigeOnlineKatalog(data.apps, data.angemeldet);
       for (const b of boards) b.programmeEintragen();
     } catch (e) {
