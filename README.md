@@ -20,7 +20,7 @@ Das espBoard im Browser – mit **echtem MicroPython** (WebAssembly). Die Seite
 lädt die Programm-Ordner live aus GitHub (Branch `main`, sonst der
 Standard-Branch) und führt `main.py` unverändert aus.
 
-**Öffnen:** <https://mailo037.github.io/ESP32-Programme/>
+**Öffnen:** <https://mailo037.github.io/ESP32/>
 (GitHub Pages muss dafür einmal eingeschaltet werden, siehe unten).
 
 ## Was geht
@@ -47,7 +47,7 @@ S17/S4/S16/S5, Q/E und Z/C = Potis. Oder alles mit Maus und Finger.
 1. Im Repo auf **Settings → Pages**.
 2. *Source:* **Deploy from a branch**, Branch **simulator**, Ordner **/ (root)** → *Save*.
 3. Nach ca. einer Minute ist die Seite unter
-   `https://mailo037.github.io/ESP32-Programme/` erreichbar.
+   `https://mailo037.github.io/ESP32/` erreichbar.
 
 Lokal geht es auch: im Repo-Ordner `python -m http.server` starten und
 <http://localhost:8000/> öffnen. Direkt als Datei (Doppelklick) geht
