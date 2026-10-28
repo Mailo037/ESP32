@@ -1,20 +1,24 @@
 # Nachbau von "requests" fuer den espBoard-Simulator: die Anfrage stellt
 # der Browser (synchrones XMLHttpRequest im Web Worker).
 import json as _json
+import binascii as _binascii
 import simhw as hw
 
 SIMULATOR = True
 
 
 class Response:
-    def __init__(self, status, text):
+    def __init__(self, status, content):
         self.status_code = status
-        self.text = text
-        self.content = text.encode()
+        self.content = content
         self.reason = b""
 
     def json(self):
         return _json.loads(self.text)
+
+    @property
+    def text(self):
+        return self.content.decode("utf-8")
 
     def close(self):
         pass
@@ -30,7 +34,7 @@ def request(method, url, data=None, json=None, headers=None, timeout=None, **kw)
     status = int(status)
     if status == 0:
         raise OSError("keine Verbindung: " + text)
-    return Response(status, text)
+    return Response(status, _binascii.a2b_base64(text))
 
 
 def get(url, **kw):

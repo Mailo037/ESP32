@@ -2,6 +2,7 @@
 // Baut die Boards, liest Maus/Tastatur, zeigt OLED/LEDs und laedt die
 // Programme aus GitHub. Jedes Board laeuft in einem eigenen Worker (worker.js).
 import { IO, IO_LEN, INBOX_BYTES, Inbox } from "./simcore.js";
+import { onlineFiles } from "./online-source.js";
 
 const MAX_BOARDS = 2;
 const LED_PINS = [13, 12, 14, 27, 26, 25, 33, 32];          // P7 (links) ... P0 (rechts)
@@ -64,13 +65,36 @@ function tonAn() {
 // ------------------------------------------------------------------
 //  Programme aus GitHub
 // ------------------------------------------------------------------
-const quelle = { repo: "", branch: "", baum: [], ordner: [] };
+const quelle = { repo: "", branch: "", baum: [], ordner: [], apps: new Map(), mode: "online", basis: "" };
 const HUB = "Hub";
 const dateiCache = new Map();
 
 async function ladeProgrammliste() {
   const status = $("#status");
   status.classList.remove("fehler");
+  quelle.mode = $("#quelle-typ").value;
+  if (quelle.mode === "online") {
+    try {
+      const url = $("#online-url").value.trim() || (location.pathname.startsWith("/simulator") ? location.origin : "https://esphub-steel.vercel.app");
+      quelle.basis = new URL("/portal/simulator/", url).href;
+      status.textContent = "Lade Online-Apps …";
+      const r = await fetch(quelle.basis + "apps", { credentials: "same-origin", cache: "no-store" });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "App-Katalog nicht erreichbar");
+      quelle.apps = new Map(data.apps.map((app) => [app.id, app]));
+      quelle.ordner = data.apps.slice().sort((a,b) => a.name.localeCompare(b.name, "de")).map((a) => a.id);
+      status.textContent = `${data.apps.length} Online-Apps · ${data.angemeldet ? "inklusive deiner privaten Apps" : "öffentlicher App-Store"}`;
+      zeigeOnlineKatalog(data.apps, data.angemeldet);
+      for (const b of boards) b.programmeEintragen();
+    } catch (e) {
+      quelle.apps.clear(); quelle.ordner = [];
+      status.textContent = "Fehler: " + e.message; status.classList.add("fehler");
+      $("#online-liste").replaceChildren();
+      for (const b of boards) b.programmeEintragen();
+    }
+    return;
+  }
+  $("#online-katalog").hidden = true;
   quelle.repo = $("#repo").value.trim();
   let branch = $("#branch").value.trim() || "main";
   status.textContent = "Lade Programmliste aus " + quelle.repo + " …";
@@ -118,6 +142,17 @@ async function ladeDatei(eintrag) {
 }
 
 async function programmDateien(ordner) {
+  if (quelle.mode === "online") {
+    const app = quelle.apps.get(ordner);
+    if (!app) throw new Error("App nicht im aktuellen Katalog");
+    const r = await fetch(quelle.basis + "apps/" + encodeURIComponent(ordner) + "?paket=" + encodeURIComponent(app.paket || app.sha256), { credentials: "same-origin", cache: "no-store" });
+    const bundle = await r.json();
+    if (!r.ok) throw new Error(bundle.error || "Projekt nicht erreichbar");
+    const sharedResponse = await fetch(quelle.basis + "treiber", { credentials: "same-origin", cache: "no-store" });
+    const shared = await sharedResponse.json();
+    if (!sharedResponse.ok) throw new Error(shared.error || "Hub-Treiber fehlen");
+    return onlineFiles(bundle, shared);
+  }
   const dateien = {};
   const liste = quelle.baum.filter((e) => e.path.startsWith(ordner + "/") && e.path.split("/").length === 2
     && /\.(py|txt|json|csv)$/i.test(e.path) && (e.size || 0) < 200000);
@@ -139,6 +174,22 @@ async function programmDateien(ordner) {
     dateien["hubdaten/_installiert.json"] = JSON.stringify(vertraut);
   }
   return dateien;
+}
+
+function zeigeOnlineKatalog(apps, angemeldet) {
+  $("#online-katalog").hidden = false;
+  $("#online-konto").textContent = angemeldet ? "Öffentliche Apps und deine privaten Projekte." : "Alle freigegebenen Apps. Für eigene private Projekte im Portal anmelden und die Liste neu laden.";
+  const list = $("#online-liste"); list.replaceChildren();
+  if (!apps.length) { list.textContent = "Noch keine Online-Apps verfügbar."; return; }
+  for (const app of apps.slice().sort((a,b) => a.name.localeCompare(b.name, "de"))) {
+    const card = document.createElement("article"); card.className = "online-app";
+    const title = document.createElement("h3"); title.textContent = app.name;
+    const meta = document.createElement("p"); meta.textContent = `v${app.version || "?"} · ${Math.ceil(app.groesse / 1024)} KB${app.privat ? " · Privat" : ""}`;
+    const info = document.createElement("p"); info.textContent = app.info || "";
+    const run = document.createElement("button"); run.type = "button"; run.textContent = "Im Simulator starten";
+    run.onclick = () => { const board = aktiv || boards[0]; board.select.value = app.id; board.start(); };
+    card.append(title, meta, info, run); list.append(card);
+  }
 }
 
 // Online-Speicher fuer den Hub: wird als /hub_online.json auf den Flash gelegt
@@ -348,7 +399,10 @@ class Board {
 
   programmeEintragen() {
     const alt = this.select.value;
-    this.select.innerHTML = quelle.ordner.map((o) => `<option>${o}</option>`).join("");
+    this.select.replaceChildren(...quelle.ordner.map((id) => {
+      const app = quelle.mode === "online" && quelle.apps.get(id);
+      return new Option(app ? `${app.name} · v${app.version || "?"}${app.privat ? " (Privat)" : ""}` : id, id);
+    }));
     const wunsch = alt && quelle.ordner.includes(alt) ? alt
       : [HUB, "ESP-Pong"].find((o) => quelle.ordner.includes(o)) || quelle.ordner[0];
     if (wunsch) this.select.value = wunsch;
@@ -399,7 +453,7 @@ class Board {
       dateien = { ...flash, ...(await simulatorDateien()) };
     } else {
       this.konsole.textContent = "";
-      this.log(`Lade ${ordner} aus ${quelle.repo} @ ${quelle.branch} …`, "s");
+      this.log(quelle.mode === "online" ? `Lade ${ordner} aus dem Online-App-Store …` : `Lade ${ordner} aus ${quelle.repo} @ ${quelle.branch} …`, "s");
       try {
         dateien = { ...(await simulatorDateien()), ...(await programmDateien(ordner)), ...onlineKonfig() };
       } catch (e) {
@@ -585,4 +639,4 @@ function schleife() {
 }
 requestAnimationFrame(schleife);
 await ladeProgrammliste();
-if (self.crossOriginIsolated && quelle.ordner.length) boards[0].start();
+if (self.crossOriginIsolated && quelle.ordner.length && quelle.mode === "github") boards[0].start();

@@ -14,9 +14,20 @@ if "" not in sys.path:
     sys.path.insert(0, "")
 if "/" not in sys.path:
     sys.path.insert(0, "/")
+if "/lib" not in sys.path:
+    sys.path.insert(0, "/lib")
 
 
 def _starten():
+    try:
+        with open("/boot.py") as f:
+            boot = f.read()
+    except OSError:
+        boot = None
+    if boot is not None:
+        exec(boot, {"__name__": "__boot__"})
+        if getattr(sys, "_hub_update_fehler", False):
+            raise RuntimeError("Hub-Update muss fortgesetzt werden")
     with open("/main.py") as f:
         quelltext = f.read()
     g = {"__name__": "__main__", "__file__": "main.py"}

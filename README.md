@@ -1,5 +1,21 @@
 # espBoard-Simulator
 
+## Online-App-Store
+
+Direkt unter https://esphub-steel.vercel.app/simulator erreichbar, sobald der
+Service-Branch deployt ist. Standardmaessig werden freigegebene oeffentliche
+Apps aus GitHub und dem Online-Speicher angezeigt. Nach Anmeldung im Portal
+auf derselben Domain kommen eigene private Apps hinzu (Liste neu laden).
+Fremde private und versteckte Apps bleiben ausgeschlossen.
+
+ZIP-Projekte behalten Zusatzmodule und binaere Assets. Fehlende SSD1306- und
+BMP280-Treiber kommen aus dem Hub; abweichende eigene Treiber bleiben erhalten.
+Die Ausfuehrung startet bewusst per Klick. Alternativ ist weiterhin eine
+GitHub-Quelle auswaehlbar, standardmaessig der Branch `programs`.
+
+Tests: `npm test`. Fuer das Vercel-Deployment im Service-Ordner
+`npm run sync:simulator` ausfuehren und auch den Service-Branch pushen.
+
 Das espBoard im Browser – mit **echtem MicroPython** (WebAssembly). Die Seite
 lädt die Programm-Ordner live aus GitHub (Branch `main`, sonst der
 Standard-Branch) und führt `main.py` unverändert aus.

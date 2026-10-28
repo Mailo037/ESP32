@@ -125,9 +125,12 @@ const hw = {
     try {
       const x = new XMLHttpRequest();
       x.open(methode, url, false);
+      x.overrideMimeType("text/plain; charset=x-user-defined");
       if (mitBody) x.setRequestHeader("Content-Type", "application/json");
       x.send(mitBody ? body : null);
-      return x.status + "\n" + x.responseText;
+      let binary = "";
+      for (let i = 0; i < x.responseText.length; i++) binary += String.fromCharCode(x.responseText.charCodeAt(i) & 255);
+      return x.status + "\n" + btoa(binary);
     } catch (e) {
       return "0\n" + (e && e.message ? e.message : e);
     }
