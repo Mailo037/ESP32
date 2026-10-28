@@ -2,7 +2,7 @@
 // Blockierende Schleifen in main.py sind hier kein Problem.
 import { IO, ADC_INDEX, BUTTON_PINS, SSD1306Emu, Inbox } from "./simcore.js";
 
-let io, ram, emu, inboxes, macs, myIndex, mod, sleepArr, allIo;
+let io, ram, emu, inboxes, macs, myIndex, mod, sleepArr, allIo, fs;
 let i2cBuf = [], i2cFreq = 400000, lastRssi = -50;
 
 function out(text) { postMessage({ t: "out", s: text }); }
@@ -21,6 +21,34 @@ function writeBytes(ptr, bytes) {
   for (let i = 0; i < bytes.length; i++) mod.setValue(ptr + i, bytes[i], "i8");
 }
 function macEq(a, b) { for (let i = 0; i < 6; i++) if (a[i] !== b[i]) return false; return true; }
+
+// Emscripten-Dateisystem <-> "Flash" des Boards
+const SYSTEM_ORDNER = new Set(["dev", "proc", "tmp", "home"]);
+function flashLesen() {
+  const dateien = {};
+  const lauf = (pfad) => {
+    for (const n of fs.readdir(pfad || "/")) {
+      if (n === "." || n === ".." || (!pfad && SYSTEM_ORDNER.has(n))) continue;
+      const voll = pfad + "/" + n;
+      const st = fs.stat(voll);
+      if (fs.isDir(st.mode)) lauf(voll);
+      else if (st.size < 200000) dateien[voll.slice(1)] = fs.readFile(voll);
+    }
+  };
+  try { lauf(""); } catch (e) { err("Flash lesen: " + e); }
+  return dateien;
+}
+function flashSchreiben(dateien) {
+  for (const [name, inhalt] of Object.entries(dateien)) {
+    const teile = name.split("/");
+    let p = "";
+    for (const t of teile.slice(0, -1)) {
+      p += "/" + t;
+      try { fs.mkdir(p); } catch { /* gibt es schon */ }
+    }
+    fs.writeFile("/" + name, inhalt);
+  }
+}
 
 // Diese Funktionen ruft der Python-Code als Modul "simhw" auf.
 const hw = {
@@ -58,7 +86,8 @@ const hw = {
     }
   },
   mac: (i) => macs[myIndex][i],
-  reset: () => { postMessage({ t: "reset" }); sleepMs(100000); },
+  // Der Flash bleibt beim Reset erhalten: alle Dateien gehen ans Board zurueck
+  reset: () => { postMessage({ t: "reset", files: flashLesen() }); sleepMs(100000); },
   en_active: (a) => Atomics.store(io, IO.ESPNOW_ON, a ? 1 : 0),
   en_send: (macPtr, msgPtr, len) => {
     const dst = readBytes(macPtr, 6);
@@ -114,7 +143,8 @@ onmessage = async (e) => {
     });
     mod = mp._module;
     mp.registerJsModule("simhw", hw);
-    for (const [name, text] of Object.entries(m.files)) mp.FS.writeFile("/" + name, text);
+    fs = mp.FS;
+    flashSchreiben(m.files);
     Atomics.store(io, IO.RUNNING, 1);
     postMessage({ t: "running" });
     mp.runPython("import _boot");

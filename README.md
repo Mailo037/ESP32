@@ -5,6 +5,7 @@ Joystick, Taster, Potis, LEDs, RGB-LED, Summer, BMP280) vom BZTG Oldenburg.
 
 | Ordner | Programm | Kurz |
 |---|---|---|
+| [`Hub/`](Hub/) | **ESP-Hub** *(neu)* | Spiele-Galerie: alle Spiele als `gal_*.py` aufs Board, in der Galerie auswählen, mit S4 + S5 zurück. Jedes Spiel läuft in einer Sandbox |
 | [`ESP-Pong/`](ESP-Pong/) | **ESP-Pong v2.0** | Multiplayer-Pong über ESP-NOW mit Lobby: alle Boards im Raum sehen sich, jedes Board hat eine eigene Nummer, Host wählen oder einladen |
 | [`Space-Dodge/`](Space-Dodge/) | **Space Dodge v2.0** | Weltraum-Shooter mit Schild, Bombe, Munitions-LEDs und Bestenliste |
 | [`Geometry-Dash/`](Geometry-Dash/) | **Geometry Dash** *(neu)* | Würfel-Springspiel mit 3 Leveln, Ringen, Sprungpads, Übungsmodus und Musik |
@@ -22,6 +23,16 @@ espBoard laufen. Einmalig nötig: *Settings → Pages → Deploy from a branch �
 main / (root)*. Details: [`simulator/README.md`](simulator/README.md).
 
 ## Schnellstart
+
+**Alle Spiele auf einmal (empfohlen):** Mit dem [Hub](Hub/) startet das Board
+mit einer Galerie, und das ständige Austauschen von `main.py` entfällt:
+
+```powershell
+pip install mpremote
+python Hub/installieren.py COM3
+```
+
+**Einzelnes Programm:**
 
 1. [Thonny](https://thonny.org) installieren, MicroPython (v1.2x) auf den ESP32 flashen.
 2. Ordner des gewünschten Programms öffnen.

@@ -12,6 +12,10 @@ Standard-Branch) und führt `main.py` unverändert aus.
 - Board nach dem echten Vorbild: 8 LEDs P7…P0, Potis RP3/RP0, Tasterkreuz
   S17/S4/S5/S16, Joystick mit Taster S2, RGB-LED P8, OLED, Summer
 - Jedes Programm-Verzeichnis mit `main.py` erscheint automatisch in der Auswahl.
+- **Hub** (voreingestellt): Der Simulator legt alle anderen Ordner als
+  `gal_<Ordner>.py` dazu, wie `Hub/installieren.py` auf dem echten Board.
+- Der Flash bleibt bei `machine.reset()` / `soft_reset()` erhalten, z. B. für
+  Bestenlisten und den Spielwechsel im Hub. *Start* lädt alles frisch aus GitHub.
   Neue Programme einfach als Ordner ins Repo legen.
 - **Zwei Boards** gleichzeitig – sie finden sich per ESP-NOW (für ESP-Pong).
 - **Messprotokoll live:** Spannungen an MP4, MP0, MP3, MP6, MP7
