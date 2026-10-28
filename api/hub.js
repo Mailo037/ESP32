@@ -27,6 +27,8 @@ import { adminApi, anmelden, abmeldenCookie } from "../lib/admin.js";
 import * as portal from "../lib/konten.js";
 import { ADMIN_SEITE } from "../lib/admin-seite.js";
 import { PORTAL_SEITE } from "../lib/portal-seite.js";
+import { firmwareAktuell, firmwareRelease } from "../lib/firmware.js";
+import { simulatorRoute } from "../lib/simulator.js";
 
 const CORS = { "Access-Control-Allow-Origin": "*" };
 
@@ -38,6 +40,15 @@ async function boardRoute(req, res, url, p, methode) {
   if (sperre) throw new Fehler(403, "Board gesperrt" + (sperre.grund ? ": " + sperre.grund : ""));
   const bekannt = await boardPruefen(board, url.searchParams.get("t") || "");
   if (!bekannt && p !== "melden") throw new Fehler(403, "Board noch nicht angemeldet");
+  // Recovery must remain reachable for an authenticated board even if old firmware hashes differ.
+  if (p === "firmware" && methode === "GET") return senden(res, 200, { firmware: await firmwareAktuell() });
+  if (p.startsWith("firmware/") && methode === "GET") {
+    const parts = p.split("/");
+    const release = await firmwareRelease(parts[1]);
+    const file = parts.length === 3 && release.inhalt.find((f) => f.name === parts[2]);
+    if (!file) throw new Fehler(404, "Firmware-Datei unbekannt");
+    return senden(res, 200, Buffer.from(file.daten, "base64"), "application/octet-stream");
+  }
   if (bekannt && p !== "melden") {
     const regel = await veraendertRegel(board);
     if (regel === "sperren") throw new Fehler(403, "Hub veraendert - Board gesperrt (Original-Hub aufspielen)");
@@ -50,6 +61,13 @@ async function boardRoute(req, res, url, p, methode) {
   if (p.startsWith("apps/") && methode === "GET") {
     const app = (await katalogFuer(board))[p.slice(5)];
     if (!app) throw new Fehler(404, "App unbekannt");
+    const name = url.searchParams.get("datei");
+    if (name) {
+      const raw = app.dateien?.[name];
+      if (!raw) throw new Fehler(404, "Projektdatei unbekannt");
+      if (url.searchParams.get("paket") !== app.eintrag.paket) throw new Fehler(409, "App wurde aktualisiert; Katalog neu laden");
+      return senden(res, 200, raw, "application/octet-stream", CORS);
+    }
     return senden(res, 200, app.roh, "text/plain; charset=utf-8", CORS);
   }
   if (p === "melden" && methode === "POST") {
@@ -89,6 +107,7 @@ export default async function handler(req, res) {
     }
     if (p === "" && methode === "GET") return senden(res, 200, PORTAL_SEITE, "text/html; charset=utf-8", { "X-Frame-Options": "DENY" });
     if (p === "portal/galerie" && methode === "GET") return senden(res, 200, await portal.galerie());
+    if (p.startsWith("portal/simulator/") && methode === "GET") return senden(res, 200, await simulatorRoute(req, p.slice(17), url), undefined, { "Access-Control-Allow-Origin": "*", "Vary": "Cookie" });
     if (p === "portal/registrieren" && methode === "POST") return senden(res, 200, { ok: true }, undefined, { "Set-Cookie": await portal.registrieren(req) });
     if (p === "portal/anmelden" && methode === "POST") return senden(res, 200, { ok: true }, undefined, { "Set-Cookie": await portal.anmelden(req) });
     if (p === "portal/abmelden" && methode === "POST") return senden(res, 200, { ok: true }, undefined, { "Set-Cookie": portal.abmelden });

@@ -15,9 +15,8 @@ Dieser Branch ist ein eigenstaendiges Service-Projekt. `api/`, `lib/`,
 2. In Vercel das Repository `Mailo037/ESP32-Programme` verbinden oder beim
    bestehenden Projekt die Einstellungen anpassen.
 3. **Root Directory:** Repository-Stamm (`.`); einen bisherigen Eintrag
-   `Hub/vercel` entfernen. **Framework Preset:** Other. Kein Build Command
-   und kein Output Directory ueberschreiben; der Service braucht keinen
-   Frontend-Build und keine zusaetzlichen npm-Pakete.
+   `Hub/vercel` entfernen. **Framework Preset:** Other. Build und Output
+   werden durch `vercel.json` festgelegt; keine Dashboard-Overrides verwenden.
 4. Unter **Settings -> Environments -> Production -> Branch Tracking** den
    Branch **service** eintragen und speichern.
 5. Die unten genannten Pflichtvariablen fuer **Production** setzen bzw.
@@ -29,16 +28,88 @@ fuer andere Branches, sofern diese Konfiguration auf dem betreffenden Branch
 vorliegt. Die Branch-Tracking-Einstellung selbst wird im Vercel-Projekt gesetzt.
 Ein vorhandener Ignored Build Step darf `service` nicht ueberspringen.
 
-**App-Quelle getrennt vom Deployment-Branch:** `GITHUB_BRANCH` bleibt vorerst
-`main`, ebenso der Standardwert im Code. Nicht auf `service` setzen: Dieser
-Branch enthaelt weder Spiele noch die Hub-Firmware. Die Pruefsummen werden
-weiter aus `main/Hub/` geladen. Die lokalen Branches `programs` und `hub`
-sind noch nicht als gemeinsame Online-Quelle konfiguriert.
+**Quellen getrennt vom Deployment-Branch:** `GITHUB_BRANCH=programs` laedt die
+Spiele. `HUB_GITHUB_BRANCH=hub` (Standard) laedt aktuelle Hub-Dateien aus dessen
+Stamm. Registrierte Firmware-Releases verwenden ihre gespeicherten Pruefsummen;
+fuer alte Hubs der Version 2.0 bleibt `main/Hub/` als Originalquelle erhalten.
+`service` ist ausschliesslich der Deployment-Branch.
+
+Der Build Command ist jetzt `node scripts/build-static.mjs`, das Output Directory
+ist `public` (beides in `vercel.json`). Keine Dashboard-Overrides dafuer setzen.
+
+## Simulator unter /simulator
+
+Der Service liefert den Simulator unter `/simulator`. Die Liste enthaelt
+freigegebene oeffentliche GitHub- und Upload-Apps. Nach Anmeldung im Portal
+kommen die eigenen privaten Apps hinzu. Fremde private und versteckte Apps
+bleiben ausgeschlossen. ZIP-Projekte laden Module und binaere Assets;
+gemeinsame Treiber kommen aus dem aktiven Firmware-Release bzw. dem Hub-Branch.
+Apps starten per Klick, nicht automatisch beim Besuch.
+
+Read-only-Endpunkte: `/portal/simulator/apps`,
+`/portal/simulator/apps/<ID>?paket=<Hash>` und `/portal/simulator/treiber`.
+Die Paket-ID bindet den Download an den angezeigten Projektstand.
+
+Der Simulator wird im separaten Branch entwickelt. Vor einem Service-Commit
+`npm run sync:simulator` ausfuehren (Quelle ist standardmaessig der benachbarte
+Ordner `esp-simulator`), dann beide Branches committen und pushen. Die Kopie
+in `simulator/` ist versioniert, damit Vercel unabhaengig bauen kann.
+`npm run build` kopiert nur statische Simulator-Dateien nach `public/simulator`;
+die API-Quellen bleiben ausserhalb. Vercel setzt COOP-/COEP-Header fuer WASM
+und SharedArrayBuffer.
 
 Dokumentation: [Vercel Git-Deployments](https://vercel.com/docs/git) und
 [Branch-Regeln](https://vercel.com/docs/project-configuration/git-configuration).
 
-## Geheimnisse – nur in Vercel
+## Hub-Firmware und Projekt-ZIPs
+
+Unter **Admin -> Firmware** koennen ausschliesslich angemeldete Admins neue
+Firmware-ZIPs mit Version (X.Y.Z) und Hinweisen erstellen. Erst der separate
+Schritt **Veroeffentlichen** aktiviert das Update fuer die Boards. Dieselbe
+Versionsnummer kann nicht fuer unterschiedliche Firmware-Dateien verwendet
+werden; Downgrades und paralleles Ueberschreiben der aktiven Version werden
+abgewiesen. Alte Releases bleiben fuer bereits gestartete Downloads erhalten.
+
+Die ZIP wird im Hub-Projekt mit `python release_erstellen.py` erstellt und
+enthaelt genau `main.py`, `hub_apps.py`, `hub_galerie.py`, `hub_online.py`,
+`hub_update.py`, `ssd1306.py`, `bmp280.py` und `hub_version.json`.
+`boot.py` wird einmalig per USB installiert und nicht per OTA ersetzt.
+Auch den initialen Release 2.1.0 hochladen und veroeffentlichen, damit dessen
+Pruefsummen als offizieller Hub-Stand registriert sind.
+
+Die neuen Board-Endpunkte `GET /firmware` und
+`GET /firmware/<Release-ID>/<Datei>` verlangen eine gueltige Board-Anmeldung.
+Sie bleiben fuer authentifizierte, nicht gesperrte Boards auch bei abweichenden
+Firmware-Pruefsummen erreichbar, damit diese sich aktualisieren koennen.
+Firmware-Releases, Versionsindex und aktives Manifest liegen unter
+`esphub_admin/firmware`. Die vorhandenen gesperrten Firebase-Regeln bleiben
+passend: Schreibzugriff erfolgt ausschliesslich ueber den Service.
+
+**App-Uploads im Admin und Portal sind jetzt ZIPs**, keine Auswahl mehrerer
+Python-Dateien. Module und Assets bleiben zusammen mit `main.py` erhalten,
+auch bei privaten Apps und der anschliessenden Admin-Freigabe. Grenzen:
+1 MB ZIP-Datei, 512 KB entpackt, maximal 128 Eintraege. Pfad-Traversierung,
+Symlinks, doppelte Dateinamen, beschaedigte CRCs und ZIP-Bomben werden abgelehnt.
+Projektdateien werden separat und nur ueber den autorisierten App-Katalog mit
+Paket-ID ausgeliefert, damit ein Update waehrend des Downloads keine gemischte
+Installation erzeugt.
+
+`ssd1306.py` und `bmp280.py` werden im Stamm oder in `lib/` nur dann entfernt,
+wenn ihr Hash dem entsprechenden Treiber des aktiven Hub-Releases entspricht.
+Ohne aktiven Release gelten die Hashes aus `shared-drivers.json` als Bootstrap
+fuer Hub 2.1.0. Diese Datei muss bei Aenderungen der Bootstrap-Treiber angepasst
+werden; nach Aktivierung eines Releases werden dessen Hashes verwendet.
+Abweichende Treiber werden vollstaendig gespeichert. Der Katalog zaehlt nur
+die verbleibenden App-Dateien als Installationsgroesse.
+
+Die bisherige GitHub-Quelle fuer Spiele bleibt erhalten. Firmware-Updates
+verwenden dagegen die vom Admin hochgeladenen Releases. Die Pruefsummen
+registrierter Firmware-Versionen werden gegen ihren eigenen Release geprueft,
+damit ein aelterer offizieller Hub nicht als manipuliert markiert wird.
+
+Lokal pruefen: `npm test` (Mock-Datenbank, keine Live-Schreibzugriffe).
+
+## Zugangsdaten
 
 Alles Geheime gehört **nur** in *Vercel → Projekt esphub → Settings →
 Environment Variables*. Nicht ins Repo, nicht in den Chat, nicht aufs Board.
@@ -49,7 +120,7 @@ Environment Variables*. Nicht ins Repo, nicht in den Chat, nicht aufs Board.
 | `FIREBASE_SERVICE_ACCOUNT` | ja | kompletter Inhalt der Dienstkonto-JSON (siehe unten), Typ **Sensitive** |
 | `ADMIN_TOKEN` | ja | dein Admin-Passwort, mindestens 8 Zeichen, lang und zufällig, Typ **Sensitive** |
 | `HUB_TOKEN` | nein | zusätzliches Passwort für die Boards (`auth` in `hub_online.json`) |
-| `GITHUB_REPO` / `GITHUB_BRANCH` | nein | Quelle des App-Stores (gesetzt: `Mailo037/ESP32-Programme` / `main`) |
+| `GITHUB_REPO` / `GITHUB_BRANCH` | nein | Quelle des App-Stores (`Mailo037/ESP32-Programme` / `programs`) |
 | `GITHUB_TOKEN` | nein | nur bei sehr vielen Abrufen (GitHub-Limit) |
 
 Nach dem Ändern von Variablen einmal neu deployen: *Deployments → … → Redeploy*.

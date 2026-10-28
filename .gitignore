@@ -2,8 +2,10 @@ __pycache__/
 *.pyc
 .vercel/
 node_modules/
+public/
 .env
 .env.*
 !.env.example
 server/hub_daten.json
 server/hub_daten.tmp
+.vercel
