@@ -12,6 +12,85 @@ const BUZZER = 15;
 const $ = (s, el = document) => el.querySelector(s);
 
 // ------------------------------------------------------------------
+//  Eigenes Auswahl-Menue statt <select> (gleiche Schnittstelle:
+//  value, Optionen setzen, "change"-Ereignis)
+// ------------------------------------------------------------------
+let offenesMenue = null;
+class Auswahl {
+  constructor(el, label) {
+    this.el = el;
+    this.wert = "";
+    el.classList.add("auswahl");
+    el.innerHTML = `<button type="button" class="auswahl-knopf" aria-haspopup="listbox" aria-expanded="false" aria-label="${label}"><span>…</span><svg class="ic"><use href="#i-runter"/></svg></button><div class="auswahl-liste" role="listbox"></div>`;
+    this.knopf = $(".auswahl-knopf", el);
+    this.liste = $(".auswahl-liste", el);
+    this.knopf.addEventListener("click", () => (offenesMenue === this ? this.zu() : this.auf()));
+    this.knopf.addEventListener("keydown", (e) => { if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); this.auf(); } });
+    this.liste.addEventListener("click", (e) => {
+      const o = e.target.closest("[data-w]");
+      if (!o) return;
+      this.zu();
+      this.knopf.focus();
+      if (o.dataset.w !== this.wert) { this.value = o.dataset.w; el.dispatchEvent(new Event("change")); }
+    });
+    this.liste.addEventListener("keydown", (e) => {
+      const k = [...this.liste.querySelectorAll("button")], i = k.indexOf(document.activeElement);
+      if (e.key === "ArrowDown") k[Math.min(k.length - 1, i + 1)]?.focus();
+      else if (e.key === "ArrowUp") k[Math.max(0, i - 1)]?.focus();
+      else if (e.key === "Escape") { this.zu(); this.knopf.focus(); }
+      else if (e.key === "Tab") { this.zu(); return; }
+      else return;
+      e.preventDefault();
+    });
+  }
+  get value() { return this.wert; }
+  set value(w) {
+    this.wert = w;
+    let text = "…";
+    for (const b of this.liste.querySelectorAll("[data-w]")) {
+      b.setAttribute("aria-selected", b.dataset.w === w);
+      if (b.dataset.w === w) text = b.textContent;
+    }
+    $("span", this.knopf).textContent = text;
+  }
+  optionen(liste) {      // [[wert, text], ...]
+    this.liste.replaceChildren(...liste.map(([w, t]) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.setAttribute("role", "option"); b.dataset.w = w; b.textContent = t;
+      return b;
+    }));
+    if (!liste.length) this.liste.innerHTML = '<div class="auswahl-leer">Keine Programme</div>';
+    this.value = liste.some(([w]) => w === this.wert) ? this.wert : (liste[0] || [""])[0];
+  }
+  auf() {
+    offenesMenue?.zu();
+    offenesMenue = this;
+    this.el.classList.add("offen");
+    this.knopf.setAttribute("aria-expanded", "true");
+    const r = this.knopf.getBoundingClientRect(), l = this.liste;
+    l.style.minWidth = r.width + "px";
+    l.style.left = Math.max(8, Math.min(r.left, innerWidth - l.offsetWidth - 8)) + "px";
+    let oben = r.bottom + 6;
+    if (oben + l.offsetHeight > innerHeight - 8 && r.top - 6 - l.offsetHeight > 8) oben = r.top - 6 - l.offsetHeight;
+    l.style.top = oben + "px";
+    (l.querySelector('[aria-selected="true"]') || l.querySelector("button"))?.focus();
+  }
+  zu() {
+    if (offenesMenue !== this) return;
+    offenesMenue = null;
+    this.el.classList.remove("offen");
+    this.knopf.setAttribute("aria-expanded", "false");
+  }
+}
+addEventListener("pointerdown", (e) => { if (offenesMenue && !offenesMenue.el.contains(e.target)) offenesMenue.zu(); });
+addEventListener("scroll", (e) => { if (offenesMenue && !offenesMenue.el.contains(e.target)) offenesMenue.zu(); }, true);
+addEventListener("resize", () => offenesMenue?.zu());
+
+const quelleTyp = new Auswahl($("#quelle-typ"), "Quelle");
+quelleTyp.optionen([["online", "Online-App-Store"], ["github", "GitHub-Repository"]]);
+quelleTyp.el.addEventListener("change", () => { $("#github-felder").hidden = quelleTyp.value !== "github"; });
+
+// ------------------------------------------------------------------
 //  Bauteile (Arbeitsblatt "Kennenlernen des espBoards")
 // ------------------------------------------------------------------
 const BAUTEILE = [
@@ -72,7 +151,7 @@ const dateiCache = new Map();
 async function ladeProgrammliste() {
   const status = $("#status");
   status.classList.remove("fehler");
-  quelle.mode = $("#quelle-typ").value;
+  quelle.mode = quelleTyp.value;
   if (quelle.mode === "online") {
     try {
       const url = $("#online-url").value.trim() || (location.pathname.startsWith("/simulator") ? location.origin : "https://esphub-steel.vercel.app");
@@ -187,7 +266,7 @@ function zeigeOnlineKatalog(apps, angemeldet) {
     const title = document.createElement("h3"); title.textContent = app.name;
     const meta = document.createElement("p"); meta.textContent = `v${app.version || "?"} · ${Math.ceil(app.groesse / 1024)} KB${app.privat ? " · Privat" : ""}`;
     const info = document.createElement("p"); info.textContent = app.info || "";
-    const run = document.createElement("button"); run.type = "button"; run.textContent = "Im Simulator starten";
+    const run = document.createElement("button"); run.type = "button"; run.className = "btn zweit klein"; run.textContent = "Im Simulator starten";
     run.onclick = () => { const board = aktiv || boards[0]; board.select.value = app.id; board.start(); };
     card.append(title, meta, info, run); list.append(card);
   }
@@ -293,10 +372,9 @@ class Board {
     karte.innerHTML = `
       <div class="board-leiste">
         <span class="name">Board ${this.i + 1}</span>
-        <label class="sr" for="prog-${this.i}" hidden>Programm</label>
-        <select id="prog-${this.i}" aria-label="Programm für Board ${this.i + 1}"><option>…</option></select>
-        <button type="button" class="haupt" data-aktion="start">Start</button>
-        <button type="button" data-aktion="stopp">Stopp</button>
+        <div id="prog-${this.i}"></div>
+        <button type="button" class="btn" data-aktion="start"><svg class="ic"><use href="#i-play"/></svg>Start</button>
+        <button type="button" class="btn zweit" data-aktion="stopp">Stopp</button>
       </div>
       <div class="board">${boardHTML()}</div>
       <div class="konsole" aria-live="polite"></div>`;
@@ -309,14 +387,14 @@ class Board {
     this.ledEls = [...karte.querySelectorAll(".led")];
     this.rgbEl = $(".rgb .licht", karte);
     this.konsole = $(".konsole", karte);
-    this.select = $("select", karte);
+    this.select = new Auswahl($(`#prog-${this.i}`, karte), `Programm für Board ${this.i + 1}`);
     this.stick = $(".stick", karte);
     this.joyEl = $(".joystick", karte);
 
     karte.addEventListener("pointerdown", () => setAktiv(this), true);
     $('[data-aktion="start"]', karte).addEventListener("click", () => this.start());
     $('[data-aktion="stopp"]', karte).addEventListener("click", () => this.stopp("Gestoppt."));
-    this.select.addEventListener("change", () => this.start());
+    this.select.el.addEventListener("change", () => this.start());
 
     // Taster
     for (const t of karte.querySelectorAll(".taster")) {
@@ -400,9 +478,9 @@ class Board {
 
   programmeEintragen() {
     const alt = this.select.value;
-    this.select.replaceChildren(...quelle.ordner.map((id) => {
+    this.select.optionen(quelle.ordner.map((id) => {
       const app = quelle.mode === "online" && quelle.apps.get(id);
-      return new Option(app ? `${app.name} · v${app.version || "?"}${app.privat ? " (Privat)" : ""}` : id, id);
+      return [id, app ? `${app.name} · v${app.version || "?"}${app.privat ? " (Privat)" : ""}` : id];
     }));
     const wunsch = alt && quelle.ordner.includes(alt) ? alt
       : [HUB, "ESP-Pong"].find((o) => quelle.ordner.includes(o)) || quelle.ordner[0];
@@ -568,7 +646,7 @@ function tastaturAuswerten() {
   aktiv.eingabenSchreiben();
 }
 addEventListener("keydown", (e) => {
-  if (e.target.closest && e.target.closest("input, select, textarea")) return;
+  if (e.target.closest && e.target.closest("input, textarea, .auswahl")) return;
   const p = { KeyQ: [39, -0.05], KeyE: [39, 0.05], KeyZ: [36, -0.05], KeyY: [36, -0.05], KeyC: [36, 0.05] }[e.code];
   if (p && aktiv) { aktiv.potiSetzen(p[0], aktiv.poti[p[0]] + p[1]); e.preventDefault(); return; }
   if (e.code in TASTEN || e.code.startsWith("Arrow")) {
@@ -621,7 +699,7 @@ $("#zweites").addEventListener("click", (e) => {
   boards.push(b);
   b.programmeEintragen();
   b.boardEl.classList.toggle("zeige-nummern", $("#opt-nummern").checked);
-  e.target.hidden = true;
+  e.currentTarget.hidden = true;
   setAktiv(b);
   if (quelle.ordner.length) b.start();
 });
