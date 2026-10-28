@@ -109,6 +109,24 @@ damit ein aelterer offizieller Hub nicht als manipuliert markiert wird.
 
 Lokal pruefen: `npm test` (Mock-Datenbank, keine Live-Schreibzugriffe).
 
+### Echte Firebase-Funktionspruefung
+
+Production-Builds pruefen vor der Veroeffentlichung die Verbindung zum Projekt
+`esp32-services`. Der Test verwendet dieselben Server-Routen und Zugangsdaten
+wie die App: Registrierung/Login, private ZIP-Projekte, Board-Kopplung,
+Installationsauftraege, Spielstaende, Bestenlisten, Quoten und bedingte Writes.
+Er legt ausschliesslich zufaellig benannte Diagnose-Daten an, prueft vorher,
+dass diese Pfade frei sind, und entfernt sie anschliessend auch bei Fehlern.
+Passwoerter, Board-Schluessel und Dienstkonto-Schluessel erscheinen nicht im Log.
+Ein Fehler verhindert die Veroeffentlichung; das letzte funktionierende
+Production-Deployment bleibt erhalten. Build-Logs enthalten pro Schritt
+`FIREBASE CHECK PASS` sowie abschliessend `FIREBASE CHECK COMPLETE`.
+
+Manuell mit korrekt gesetzten Server-Umgebungsvariablen: `npm run check:cloud`.
+Der Test ist kein oeffentlicher HTTP-Endpunkt und braucht keine zusaetzlichen
+Admin-Zugangsdaten oder geoeffneten Firebase-Regeln. `FIREBASE_DATABASE_URL`
+muss die Datenbankinstanz bezeichnen, niemals `console.firebase.google.com`.
+
 ## Zugangsdaten
 
 Alles Geheime gehört **nur** in *Vercel → Projekt esphub → Settings →

@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
+    "check:cloud": "node scripts/check-firebase.mjs",
     "build": "node scripts/build-static.mjs",
     "sync:simulator": "node scripts/sync-simulator.mjs"
   },
