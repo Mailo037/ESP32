@@ -49,9 +49,9 @@ KANAL = 1                   # WLAN-Kanal, muss auf allen Boards gleich sein
 STROMSPAREN_AUS = True      # WLAN-Stromsparen aus = weniger Verzoegerung
 SENDE_MS = 16               # Spielstand ca. 60x pro Sekunde senden
 
-# LEDs oben auf dem Board, von links nach rechts.
+# LEDs oben auf dem Board, von links nach rechts (P7 ... P0).
 # Je 4 LEDs pro Spieler: links = Host (links), rechts = Gast (rechts).
-LED_PINS = (32, 33, 25, 26, 27, 14, 12, 13)
+LED_PINS = (13, 12, 14, 27, 26, 25, 33, 32)
 LEDS_UMDREHEN = False       # True, falls die Haelften vertauscht sind
 
 # RGB-LED: gruen = Spiel laeuft, blau = wartet, rot = Verbindung weg

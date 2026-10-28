@@ -7,6 +7,7 @@ Joystick, Taster, Potis, LEDs, RGB-LED, Summer, BMP280) vom BZTG Oldenburg.
 |---|---|---|
 | [`ESP-Pong/`](ESP-Pong/) | **ESP-Pong v2.0** | Multiplayer-Pong über ESP-NOW mit Lobby: alle Boards im Raum sehen sich, jedes Board hat eine eigene Nummer, Host wählen oder einladen |
 | [`Space-Dodge/`](Space-Dodge/) | **Space Dodge v2.0** | Weltraum-Shooter mit Schild, Bombe, Munitions-LEDs und Bestenliste |
+| [`Geometry-Dash/`](Geometry-Dash/) | **Geometry Dash** *(neu)* | Würfel-Springspiel mit 3 Leveln, Ringen, Sprungpads, Übungsmodus und Musik |
 | [`3D-Render/`](3D-Render/) | **3D-Render v2.0** | Drahtgitter-Körper (Würfel bis Ikosaeder) mit dem Joystick drehen |
 | [`docs/espBoard.md`](docs/espBoard.md) | **Board-Doku** | Bauteile, Pinbelegung, Messprotokoll mit Sollwerten, Stromversorgung |
 

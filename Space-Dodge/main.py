@@ -39,8 +39,8 @@ NAME_LAENGE = 4               # Buchstaben pro Name (1 ... 8)
 PLAETZE = 5                   # Plaetze in der Bestenliste (1 ... 5, mehr passen nicht aufs Display)
 BUCHSTABEN = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"   # erlaubte Zeichen
 # --- LED-Animation (die 8 LEDs wechseln sich rot/gelb ab)
-ROT_MASKE = 0b01010101        # welche LEDs rot sind (LED1 = ganz rechts im Byte).
-                              # Sind Rot und Gelb vertauscht: auf 0b10101010 aendern
+ROT_MASKE = 0b10101010        # welche LEDs rot sind (Bit 0 = P0 = LED ganz rechts, gelb).
+                              # Sind Rot und Gelb vertauscht: auf 0b01010101 aendern
 ANIMATION_TEMPO_MS = 110      # Dauer eines Animationsschritts im Titelbild
 # --- Cheatcode: im Titelbild eingeben, nochmal eingeben = wieder aus
 # U/D/L/R = Joystick hoch/runter/links/rechts, F = S17 (Feuer). Beliebig aenderbar.
@@ -70,6 +70,7 @@ TAKT_MS = 40.0 / SPIEL_TEMPO
 i2c = I2C(0, scl=Pin(22), sda=Pin(21), freq=I2C_FREQ)
 oled = SSD1306_I2C(128, 64, i2c)
 
+# P0 (ganz rechts) ... P7 (ganz links) -> der Munitionsbalken waechst von rechts
 leds = [Pin(p, Pin.OUT) for p in (32, 33, 25, 26, 27, 14, 12, 13)]
 
 Soben = Pin(17, Pin.IN)     # S17

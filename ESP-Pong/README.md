@@ -96,7 +96,8 @@ Wer zuerst **5 Punkte** hat, gewinnt. Der Ball wird bei jedem Schlägertreffer
 - die Balken wachsen von außen zur Mitte, bei `4 : 4` leuchten alle acht
 - in der Lobby sind alle LEDs aus
 
-Sind die Hälften vertauscht: `LEDS_UMDREHEN = True`.
+`LED_PINS` steht in der echten Reihenfolge auf dem Board (P7 = GPIO 13 links …
+P0 = GPIO 32 rechts). Sind die Hälften trotzdem vertauscht: `LEDS_UMDREHEN = True`.
 
 ## Einstellungen (oben in `main.py`)
 

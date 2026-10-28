@@ -9,17 +9,35 @@ Die Nummern entsprechen den Nummern auf dem Foto im Arbeitsblatt.
 
 | Nr. | Bauteil | Beschriftung auf dem Board | Aufgabe |
 |---|---|---|---|
-| 1 | **ESP32-DevKit** (ESP32-WROOM-32, USB-C, CH340/CP210x) | – | Mikrocontroller: 2 Kerne, 240 MHz, WLAN + Bluetooth, 3,3-V-Logik |
-| 2 | **8 LEDs** (rot/gelb) mit Widerstandsnetzwerk 8 × 220 Ω | `RN220`, `P0`…`P7` | Einfache Ausgaben, z. B. Punktestand oder Munition |
-| 3 | **4 Taster** | `S4`, `S5`, `S16`, `S17` | Eingaben, active-high (gedrückt = 3,3 V) |
+| 1 | **ESP32-DevKit** (ESP-32D „HW-394“, USB-C) | – | Mikrocontroller: 2 Kerne, 240 MHz, WLAN + Bluetooth, 3,3-V-Logik |
+| 2 | **8 LEDs** (rot/gelb abwechselnd) mit Widerstandsnetzwerk 8 × 220 Ω | `RN220`, `P7` (links) … `P0` (rechts) | Einfache Ausgaben, z. B. Punktestand oder Munition |
+| 3 | **4 Taster** als Kreuz: S17 oben, S4 links, S5 rechts, S16 unten | `S4`, `S5`, `S16`, `S17` | Eingaben, active-high (gedrückt = 3,3 V) |
 | 4 | **2 Potentiometer** (Drehwiderstände) | `RP0`, `RP3` | Analoge Eingabe 0 … 3,3 V |
-| 5 | **Analog-Joystick** mit Taster | `RJ6`, `RJ7` | Zwei Potis (X/Y) + Druckknopf |
-| 6 | **RGB-LED** mit Vorwiderständen | `R18`, `R19`, `R23` | Farbige Statusanzeige (PWM) |
+| 5 | **Analog-Joystick** mit Taster | `RJ6`, `RJ7`, Taster `S2` | Zwei Potis (X/Y) + Druckknopf |
+| 6 | **RGB-LED** mit Vorwiderständen | `P8`, `R18`, `R19`, `R23` | Farbige Statusanzeige (PWM) |
 | 7 | **OLED-Display** SSD1306, 128 × 64 Pixel | – | Grafikausgabe über I²C |
-| 8 | **BMP280** | `BMP280` | Temperatur- und Luftdrucksensor (I²C) |
+| 8 | **BMP280** (steckbar, 6-polige Buchse `3V3 GND SCL SDA …`) | `BMP280` | Temperatur- und Luftdrucksensor (I²C) – bei manchen Boards ist die Buchse leer |
 
-Außerdem auf dem Board: ein **Piezo-Summer** an GPIO 15 (Steckbrücke `XJ15`)
-und die Messpunkte `MP0`, `MP3`, `MP4`, `MP6`, `MP7` sowie `GND`.
+Außerdem auf dem Board: ein **Piezo-Summer** an GPIO 15 mit Transistor `T3`
+(Steckbrücke `XJ15` muss gesteckt sein, sonst bleibt der Summer stumm), die
+Stiftleiste `X51…X53`, die I²C-Messpunkte `MCL`/`MDA` und die Messpunkte
+`MP0`, `MP3`, `MP4`, `MP6`, `MP7`, `MP26` sowie `GND`.
+
+```
+ ┌──────────────────────────────────────────────────────────────┐
+ │ X51  P7 P6 P5 P4 P3 P2 P1 P0     (RP3)   (RP0)               │
+ │      rt ge rt ge rt ge rt ge      MP3     MP0    [BMP280]    │
+ │ ┌───────────────────────────┐                                │
+ │ │  ESP32-DevKit (USB-C)     │   MP6   ┌──────────┐           │
+ │ │                           │   MP7   │   OLED   │           │
+ │ └───────────────────────────┘         │ 128 × 64 │           │
+ │ XJ15 T3         R19 R18  R23  MCL MDA └──────────┘           │
+ │  MP4      S17                              ┌─────────┐       │
+ │       S4        S5          P8 (RGB)       │Joystick │ RJ6   │
+ │           S16                         RJ7  │  (S2)   │       │
+ │                 BZTG Oldenburg / August 26 └─────────┘ GND   │
+ └──────────────────────────────────────────────────────────────┘
+```
 
 ## Pinbelegung
 
@@ -30,7 +48,7 @@ für den **ADC1-Kanal**: `RP0` → Kanal 0 (GPIO 36), `RJ7` → Kanal 7 (GPIO 35
 | Bauteil | GPIO | Hinweis |
 |---|---|---|
 | OLED + BMP280 (I²C) | SDA = 21, SCL = 22 | OLED-Adresse `0x3C`, BMP280 `0x76` |
-| LEDs 1 … 8 (links → rechts) | 32, 33, 25, 26, 27, 14, 12, 13 | Ausgang, 1 = an |
+| LEDs P7 … P0 (links → rechts) | 13, 12, 14, 27, 26, 25, 33, 32 | Ausgang, 1 = an. P7 rot, P6 gelb, … P0 gelb (abwechselnd) |
 | Taster S4 / S5 / S16 / S17 | 4 / 5 / 16 / 17 | Eingang, 10 kΩ Pull-down → gedrückt = 1 |
 | Joystick X (`RJ6`) | 34 | ADC1 Kanal 6, nur Eingang |
 | Joystick Y (`RJ7`) | 35 | ADC1 Kanal 7, nur Eingang |

@@ -32,7 +32,7 @@ I2C_FREQ = 400000        # OLED-Takt. Viele Displays schaffen 800000-1000000
 ACHSEN_TAUSCHEN = False  # True, falls links/rechts und hoch/runter vertauscht sind
 X_UMDREHEN = False       # Joystick links/rechts umkehren
 Y_UMDREHEN = False       # Joystick hoch/runter umkehren
-LED_PINS = (32, 33, 25, 26, 27, 14, 12, 13)
+LED_PINS = (13, 12, 14, 27, 26, 25, 33, 32)   # P7 (links) ... P0 (rechts)
 
 # Falls die Taster gedrueckt 0 liefern, auf False setzen:
 TASTEN_AKTIV_HIGH = True
