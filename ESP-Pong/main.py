@@ -1,3 +1,6 @@
+# HUB-NAME: ESP Pong
+# HUB-VERSION: 2.1
+# HUB-INFO: Multiplayer-Pong ueber ESP-NOW mit Lobby fuer alle Boards
 # =====================================================================
 #  ESP-PONG v2.0 - Multiplayer-Pong fuer BZTG espBoards ueber ESP-NOW
 # =====================================================================
@@ -7,14 +10,17 @@
 #
 #  LOBBY
 #    Joystick hoch/runter : Board in der Liste auswaehlen
-#    Joystick-Taster      : HOST  -> beitreten
+#    S5 (oder Joystick nach rechts / Joystick-Taster):
+#                           HOST  -> beitreten
 #                           FREI  -> zum Spiel einladen
+#                           Einladung annehmen
 #    S16                  : selbst ein Spiel eroeffnen (Host werden)
 #    S4                   : abbrechen / Einladung ablehnen
 #  SPIEL
 #    Joystick hoch/runter : Schlaeger
-#    Joystick-Taster      : nach Spielende neue Runde
+#    S5 (oder Joystick rechts / Joystick-Taster): nach Spielende Revanche
 #    S4                   : Match verlassen, zurueck zur Lobby
+#  Poti RP3 (links oben)  : Lautstaerke (ganz links = stumm)
 #
 #  Auf JEDES Board kopieren: main.py + ssd1306.py (Root-Ordner)
 #  Kein Router, kein Schul-WLAN - die Boards sprechen direkt.
@@ -32,7 +38,7 @@ import espnow
 # =====================================================================
 #  EINSTELLUNGEN
 # =====================================================================
-VERSION = "v2.0"            # wird in der Lobby angezeigt
+VERSION = "v2.1"            # wird in der Lobby angezeigt
 NAME = ""                   # eigener Name (max. 8 Zeichen), leer = "#Nummer"
 TASTEN_AKTIV_HIGH = True    # Board: 3,3 V ueber Taster, 10k Pull-down
 HOCH_POSITIV = True         # Joystick: positiver ADC-Wert = nach oben
@@ -109,6 +115,7 @@ oled = SSD1306_I2C(128, 64, i2c)
 
 S16 = Pin(16, Pin.IN)
 S4 = Pin(4, Pin.IN)
+S5 = Pin(5, Pin.IN)
 SJOY = Pin(2, Pin.IN)
 
 if LEDS_UMDREHEN:
@@ -118,6 +125,11 @@ led_stand = None
 
 vJoys = ADC(Pin(35))
 vJoys.atten(ADC.ATTN_11DB)
+hJoys = ADC(Pin(34))
+hJoys.atten(ADC.ATTN_11DB)
+POTI_LAUT = ADC(Pin(39))      # Poti RP3 = Lautstaerke
+POTI_LAUT.atten(ADC.ATTN_11DB)
+H0 = 32768                    # Joystick-Mitte links/rechts (wird gemessen)
 
 try:
     buzzer = PWM(Pin(15), freq=1000, duty_u16=0)
@@ -144,11 +156,21 @@ def duty_setzen(wert):
         buzzer.duty(wert // 64)
 
 
-def beep(freq=1200, ms=25, lautstaerke=30000):
+def lautstaerke():
+    """Poti RP3 (links oben) = Lautstaerke, ganz nach links = stumm.
+    Der Piezo ist bei 50 % Tastverhaeltnis (duty 32768) am lautesten."""
+    w = POTI_LAUT.read_u16()
+    return 0 if w < 2000 else 4000 + w * 29000 // 65535
+
+
+def beep(freq=1200, ms=25):
     global beep_until
+    laut = lautstaerke()
+    if not laut:
+        return
     try:
         buzzer.freq(freq)
-        duty_setzen(lautstaerke)
+        duty_setzen(laut)
     except Exception:
         return
     beep_until = ticks_add(ticks_ms(), ms)
@@ -193,6 +215,23 @@ class Taste:
         flanke = jetzt and not self.alt
         self.alt = jetzt
         return flanke
+
+
+class Los:
+    """Bestaetigen: S5, Joystick nach rechts oder Joystick-Taster."""
+
+    def __init__(self):
+        self.s5 = Taste(S5)
+        self.joy = Taste(SJOY)
+        self.rechts_alt = True          # erst loslassen, dann zaehlt es
+
+    def neu(self):
+        a = self.s5.neu()
+        b = self.joy.neu()
+        rechts = achse(hJoys.read_u16(), H0) > 0.6
+        c = rechts and not self.rechts_alt
+        self.rechts_alt = rechts
+        return a or b or c
 
 
 def leds_anzeigen(s1, s2):
@@ -377,6 +416,7 @@ class Funk:
 #  STARTBILD + KALIBRIEREN
 # =====================================================================
 def kalibrieren():
+    global H0
     oled.fill(0)
     mitte_text("ESP-PONG " + VERSION, 4)
     oled.hline(0, 14, 128, 1)
@@ -385,10 +425,12 @@ def kalibrieren():
     mitte_text("Mitte messen...", 50)
     zeige()
     sleep_ms(900)
-    summe = 0
+    summe = h = 0
     for _ in range(30):
         summe += vJoys.read_u16()
+        h += hJoys.read_u16()
         sleep_ms(8)
+    H0 = h // 30
     return summe // 30
 
 
@@ -429,7 +471,7 @@ def lobby(funk, v0, meldung=None):
     letztes_bild = 0
     if meldung:
         meldung = [meldung, ticks_add(ticks_ms(), 2000)]
-    joy = Taste(SJOY)
+    los = Los()
     t16 = Taste(S16)
     t4 = Taste(S4)
     leds_aus()
@@ -505,7 +547,7 @@ def lobby(funk, v0, meldung=None):
         funk.beacon(status)
 
         # ---------- Eingaben ----------
-        j = joy.neu()
+        j = los.neu()
         s16 = t16.neu()
         s4 = t4.neu()
         y = joystick_y(v0)
@@ -649,14 +691,14 @@ def lobby_zeichnen(funk, liste, auswahl, oben, status, partner, boards,
         if len(liste) > 4:     # Scrollbalken
             h = max(4, 40 * 4 // len(liste))
             oled.vline(127, 11 + (40 - h) * oben // (len(liste) - 4), h, 1)
-        oled.text("Joy=Los S16=Host", 0, 56)
+        oled.text("S5=Los  S16=Host", 0, 56)
 
     if einladung:
         oled.fill_rect(4, 14, 120, 40, 0)
         oled.rect(4, 14, 120, 40, 1)
         mitte_text(einladung[1], 18)
         mitte_text("laedt dich ein", 28)
-        mitte_text("Joy=Ja  S4=Nein", 42)
+        mitte_text("S5=Ja  S4=Nein", 42)
     elif meldung:
         oled.fill_rect(8, 24, 112, 16, 0)
         oled.rect(8, 24, 112, 16, 1)
@@ -852,16 +894,17 @@ class Feld:
 
 def zeichne_ende(s1, s2, links, rechts, ich_links):
     oled.fill(0)
-    mitte_text("SPIEL VORBEI", 4)
-    oled.hline(0, 14, 128, 1)
+    mitte_text("SPIEL VORBEI", 1)
+    oled.hline(0, 10, 128, 1)
     gewinner_links = s1 > s2
-    mitte_text(links if gewinner_links else rechts, 20)
-    mitte_text("GEWINNT!", 30)
-    mitte_text("%d : %d" % (s1, s2), 40)
+    mitte_text(links if gewinner_links else rechts, 14)
+    mitte_text("GEWINNT! %d:%d" % (s1, s2), 24)
     if gewinner_links == ich_links:
-        oled.text("*", 4, 30)
-        oled.text("*", 116, 30)
-    oled.text("Joy=neu S4=Lobby", 0, 55)
+        oled.text("*", 0, 14)
+        oled.text("*", 120, 14)
+    oled.hline(0, 35, 128, 1)
+    mitte_text("S5 = Revanche", 40)
+    mitte_text("S4 = Lobby", 52)
     zeige()
 
 
@@ -871,7 +914,7 @@ def zeichne_ende(s1, s2, links, rechts, ich_links):
 def host_loop(funk, v0, gast, gast_name):
     spiel = PongSpiel()
     feld = Feld(funk.name[:5], gast_name[:5])
-    joy = Taste(SJOY)
+    los = Los()
     t4 = Taste(S4)
     letztes = ticks_ms()
     letzter_gast = letztes
@@ -949,13 +992,13 @@ def host_loop(funk, v0, gast, gast_name):
         spiel.schlaeger(joystick_y(v0), dt)
         ereignis = False
         if spiel.phase == PH_OVER:
-            if joy.neu() or ticks_diff(now, spiel.over_since) > 15000:
+            if los.neu() or ticks_diff(now, spiel.over_since) > 15000:
                 spiel.neustart()
                 spiel.aufschlag(random.choice((-1, 1)), now)
                 beep(900, 60)
                 ereignis = True
         else:
-            joy.neu()
+            los.neu()
             ereignis = spiel.update(dt, now)
 
         leds_anzeigen(spiel.s1, spiel.s2)
@@ -999,7 +1042,7 @@ def host_loop(funk, v0, gast, gast_name):
 def gast_loop(funk, v0, host, host_name):
     p2_y = (COURT_TOP + COURT_BOT - PADDLE_H) / 2.0
     feld = Feld(host_name[:5], funk.name[:5])
-    joy = Taste(SJOY)
+    los = Los()
     t4 = Taste(S4)
     letztes = ticks_ms()
     letzter_state = letztes
@@ -1071,12 +1114,12 @@ def gast_loop(funk, v0, host, host_name):
         elif p2_y > COURT_BOT - PADDLE_H:
             p2_y = COURT_BOT - PADDLE_H
 
-        if state is not None and state[7] == PH_OVER and joy.neu():
+        if state is not None and state[7] == PH_OVER and los.neu():
             restart_zaehler = (restart_zaehler + 1) & 0xFF
             beep(900, 40)
             letzte_y16 = None          # sofort senden
         else:
-            joy.neu()
+            los.neu()
 
         # --- Schlaeger senden (bei Aenderung, sonst alle 100 ms) ---
         y16 = int(p2_y * 16)

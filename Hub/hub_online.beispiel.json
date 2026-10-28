@@ -1,0 +1,6 @@
+{
+  "wlan": "Name-des-WLANs",
+  "passwort": "WLAN-Passwort",
+  "url": "https://esphub-steel.vercel.app",
+  "auth": ""
+}

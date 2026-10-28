@@ -1,3 +1,6 @@
+# HUB-NAME: Space Dodge
+# HUB-VERSION: 2.1
+# HUB-INFO: Weltraum-Shooter mit Schild, Bombe und Online-Bestenliste
 # SPACE DODGE v2.0 - Spiel fuer das BZTG espBoard (MicroPython, ESP32)
 #
 # Joystick      : Raumschiff steuern (links/rechts/oben/unten)
@@ -6,7 +9,7 @@
 # Joystick-Taster: Schutzschild (verbraucht Energie)
 # S5  (rechts)  : Pause
 # S16 (unten)   : Start / Neustart
-# Poti links    : Lautstaerke des Summers
+# Poti links    : Lautstaerke des Summers (RP3, ganz links = stumm)
 # Poti rechts   : Schwierigkeit (Gegner-Tempo und -Anzahl)
 # 8 LEDs        : Munition (1 pro Schuss, laedt von selbst nach)
 # Balken unten  : Energie fuer Schild und Bombe
@@ -24,6 +27,10 @@ from ssd1306 import SSD1306_I2C
 from time import sleep_ms, ticks_ms, ticks_diff, ticks_add
 import random
 import struct
+try:
+    import hub          # gibt es nur, wenn das Spiel aus dem ESP-Hub startet
+except ImportError:
+    hub = None
 
 # =====================================================================
 #  EINSTELLUNGEN - hier kannst du alles anpassen
@@ -152,8 +159,12 @@ ton_ende = 0
 
 def ton(freq, ms):
     global ton_ende
-    # Poti links = Lautstaerke (Piezo ist bei 50 % Tastverhaeltnis am lautesten)
-    lautstaerke = 12000 + PotiL.read_u16() // 3
+    # Poti RP3 (links oben) = Lautstaerke, ganz links = stumm.
+    # Der Piezo ist bei 50 % Tastverhaeltnis (duty 32768) am lautesten.
+    w = PotiL.read_u16()
+    lautstaerke = 0 if w < 2000 else 4000 + w * 29000 // 65535
+    if not lautstaerke:
+        return
     buzzer.freq(freq)
     buzzer.duty_u16(lautstaerke)
     ton_ende = ticks_add(ticks_ms(), ms)
@@ -317,10 +328,10 @@ def hilfe():
         seite = (seite + 1) % len(SEITEN)
 
 
-def bestenliste_zeigen(liste, markiere=None):
+def bestenliste_zeigen(liste, markiere=None, titel="BESTENLISTE"):
     oled.invert(0)
     oled.fill(0)
-    oled.text("BESTENLISTE", 16, 0)
+    oled.text(titel, (128 - 8 * len(titel)) // 2, 0)
     oled.hline(0, 10, 128, 1)
     if not liste:
         oled.text("noch leer", 28, 30)
@@ -403,6 +414,12 @@ def titel(liste, cheat):
         if taste(Srechts):
             warte_loslassen(Srechts)
             bestenliste_zeigen(liste)
+            if hub:
+                # zweite Seite: alle Boards (je Board der beste Lauf)
+                welt = [(n[:NAME_LAENGE], p, e) for n, p, e in hub.bestenliste("punkte", PLAETZE)]
+                eigen = [(n, p) for n, p, e in welt if e]
+                bestenliste_zeigen([(n, p) for n, p, _ in welt], eigen[0] if eigen else None,
+                                   "ONLINE" if hub.online() else "ALLE BOARDS")
             titelbild(cheat)
         if taste(Slinks):
             warte_loslassen(Slinks)
@@ -470,6 +487,8 @@ def game_over(score, liste, cheat):
         liste.insert(platz - 1, (name, score))
         liste = liste[:PLAETZE]
         bestenliste_schreiben(liste)
+        if hub:
+            hub.eintragen("punkte", score, name)
         bestenliste_zeigen(liste, (name, score))
     return liste
 

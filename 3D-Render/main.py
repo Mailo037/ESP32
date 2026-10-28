@@ -1,3 +1,6 @@
+# HUB-NAME: 3D Render
+# HUB-VERSION: 2.0
+# HUB-INFO: Drahtgitter-Koerper mit dem Joystick drehen
 # 3D-RENDER v2.0 - Wuerfel, Dreieck, Pyramide, Oktaeder, Tetraeder, Ikosaeder
 # fuer das BZTG espBoard (MicroPython, ESP32, SSD1306 128x64)
 #

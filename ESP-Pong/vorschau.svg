@@ -33,7 +33,7 @@
 <text x="312" y="151" font-family="Consolas, Menlo, monospace" font-size="27" font-weight="700" textLength="117" lengthAdjust="spacingAndGlyphs" fill="#d7e6f7" xml:space="preserve">#4654</text>
 <text x="51" y="187" font-family="Consolas, Menlo, monospace" font-size="27" font-weight="700" textLength="309" lengthAdjust="spacingAndGlyphs" fill="#000" xml:space="preserve">#4128    HOST</text>
 <text x="51" y="217" font-family="Consolas, Menlo, monospace" font-size="27" font-weight="700" textLength="309" lengthAdjust="spacingAndGlyphs" fill="#d7e6f7" xml:space="preserve">#4391    FREI</text>
-<text x="48" y="319" font-family="Consolas, Menlo, monospace" font-size="27" font-weight="700" textLength="381" lengthAdjust="spacingAndGlyphs" fill="#d7e6f7" xml:space="preserve">Joy=Los S16=Host</text>
+<text x="48" y="319" font-family="Consolas, Menlo, monospace" font-size="27" font-weight="700" textLength="381" lengthAdjust="spacingAndGlyphs" fill="#d7e6f7" xml:space="preserve">S5=Los  S16=Host</text>
 <text x="48" y="362" font-family="Segoe UI, Arial, sans-serif" font-size="17" fill="#8fa3b8">Lobby: #4128 hostet, #4391 ist frei</text>
 <rect x="480" y="122" width="400" height="208" rx="8" fill="#000" stroke="#243140" stroke-width="3"/>
 <rect x="488" y="157" width="384" height="3" fill="#d7e6f7"/>
@@ -71,10 +71,10 @@
 <rect x="237" y="486" width="3" height="3" fill="#d7e6f7"/>
 <rect x="237" y="501" width="3" height="3" fill="#d7e6f7"/>
 <rect x="237" y="504" width="3" height="3" fill="#d7e6f7"/>
+<rect x="222" y="507" width="9" height="3" fill="#d7e6f7"/>
 <rect x="237" y="507" width="3" height="3" fill="#d7e6f7"/>
-<rect x="219" y="513" width="9" height="3" fill="#d7e6f7"/>
-<rect x="219" y="516" width="9" height="3" fill="#d7e6f7"/>
-<rect x="219" y="519" width="9" height="3" fill="#d7e6f7"/>
+<rect x="222" y="510" width="9" height="3" fill="#d7e6f7"/>
+<rect x="222" y="513" width="9" height="3" fill="#d7e6f7"/>
 <rect x="237" y="522" width="3" height="3" fill="#d7e6f7"/>
 <rect x="237" y="525" width="3" height="3" fill="#d7e6f7"/>
 <rect x="237" y="528" width="3" height="3" fill="#d7e6f7"/>
@@ -132,10 +132,10 @@
 <rect x="677" y="486" width="3" height="3" fill="#d7e6f7"/>
 <rect x="677" y="501" width="3" height="3" fill="#d7e6f7"/>
 <rect x="677" y="504" width="3" height="3" fill="#d7e6f7"/>
+<rect x="659" y="507" width="9" height="3" fill="#d7e6f7"/>
 <rect x="677" y="507" width="3" height="3" fill="#d7e6f7"/>
+<rect x="659" y="510" width="9" height="3" fill="#d7e6f7"/>
 <rect x="659" y="513" width="9" height="3" fill="#d7e6f7"/>
-<rect x="659" y="516" width="9" height="3" fill="#d7e6f7"/>
-<rect x="659" y="519" width="9" height="3" fill="#d7e6f7"/>
 <rect x="677" y="522" width="3" height="3" fill="#d7e6f7"/>
 <rect x="677" y="525" width="3" height="3" fill="#d7e6f7"/>
 <rect x="677" y="528" width="3" height="3" fill="#d7e6f7"/>
@@ -166,6 +166,6 @@
 <text x="644" y="426" font-family="Consolas, Menlo, monospace" font-size="27" font-weight="700" textLength="69" lengthAdjust="spacingAndGlyphs" fill="#d7e6f7" xml:space="preserve">0:1</text>
 <text x="752" y="426" font-family="Consolas, Menlo, monospace" font-size="27" font-weight="700" textLength="117" lengthAdjust="spacingAndGlyphs" fill="#d7e6f7" xml:space="preserve">#4391</text>
 <text x="488" y="634" font-family="Segoe UI, Arial, sans-serif" font-size="17" fill="#8fa3b8">Gleiches Spiel auf dem Gast (#4391, rechts)</text>
-<text x="48" y="700" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#6c8096">Joystick = auswählen / Schläger · Joystick-Taster = beitreten, einladen, neue Runde</text>
-<text x="48" y="722" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#6c8096">S16 = Host werden · S4 = zurück · LEDs = Spielstand · RGB grün = verbunden</text>
+<text x="48" y="700" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#6c8096">Joystick hoch/runter = auswählen / Schläger · S5 (oder Joystick rechts) = beitreten, einladen, Revanche</text>
+<text x="48" y="722" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#6c8096">S16 = Host werden · S4 = zurück · Poti RP3 = Lautstärke · LEDs = Spielstand</text>
 </svg>

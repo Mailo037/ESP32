@@ -120,6 +120,8 @@ ol.teile button { all: unset; cursor: pointer; color: var(--text); border-bottom
 ol.teile button:hover, ol.teile button:focus-visible { color: var(--akzent); border-color: var(--akzent); }
 .optionen { display: grid; gap: 6px; font-size: 13.5px; }
 .optionen label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.online { display: grid; gap: 6px; font-size: 13px; color: var(--text-2); }
+.online input { font: 500 13px var(--f-mono); background: var(--tisch-2); color: var(--text); border: 1px solid var(--linie); border-radius: 6px; padding: 6px 8px; width: 100%; box-sizing: border-box; }
 .hinweis { border: 1px solid #6b4b16; background: #2a1f0c; color: #ffd9a0; border-radius: 10px; padding: 12px 14px; font-size: 14px; }
 .hinweis[hidden] { display: none; }
 a { color: var(--oled); }
@@ -183,6 +185,17 @@ footer { color: var(--text-2); font-size: 13px; }
           <label><input type="checkbox" id="opt-nummern"> Bauteil-Nummern einblenden</label>
         </div>
         <button type="button" id="zweites">+ Zweites Board (für ESP-Pong)</button>
+      </section>
+
+      <section class="kasten">
+        <h2>Online-Speicher</h2>
+        <p>Für den Hub: Bestenlisten, Spielstände, App-Store und Portal. Leer = nur lokal. Gilt ab dem nächsten Start.</p>
+        <div class="online">
+          <label for="online-url">Adresse des ESP-Hub-Servers (https)</label>
+          <input id="online-url" placeholder="https://esphub-steel.vercel.app" spellcheck="false">
+          <label for="online-auth">Passwort (auth, optional)</label>
+          <input id="online-auth" spellcheck="false">
+        </div>
       </section>
     </aside>
   </div>

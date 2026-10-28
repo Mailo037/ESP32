@@ -65,6 +65,7 @@ function tonAn() {
 //  Programme aus GitHub
 // ------------------------------------------------------------------
 const quelle = { repo: "", branch: "", baum: [], ordner: [] };
+const HUB = "Hub";
 const dateiCache = new Map();
 
 async function ladeProgrammliste() {
@@ -121,13 +122,41 @@ async function programmDateien(ordner) {
   const liste = quelle.baum.filter((e) => e.path.startsWith(ordner + "/") && e.path.split("/").length === 2
     && /\.(py|txt|json|csv)$/i.test(e.path) && (e.size || 0) < 200000);
   await Promise.all(liste.map(async (e) => { dateien[e.path.split("/")[1]] = await ladeDatei(e); }));
+  if (ordner === HUB) {
+    // Galerie: jedes andere Programm kommt als gal_<Ordner>.py dazu
+    // (wie Hub/installieren.py es auf dem echten Board macht)
+    const spiele = quelle.ordner.filter((o) => o !== HUB);
+    const vertraut = {};
+    await Promise.all(spiele.map(async (o) => {
+      const e = quelle.baum.find((x) => x.path === o + "/main.py");
+      const id = o.replace(/[^A-Za-z0-9]/g, "_");
+      const text = await ladeDatei(e);
+      dateien["gal_" + id + ".py"] = text;
+      // Spiele aus dem Repo gelten als vertrauenswuerdig (Hub-Dienste)
+      const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+      vertraut[id] = [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    }));
+    dateien["hubdaten/_installiert.json"] = JSON.stringify(vertraut);
+  }
   return dateien;
 }
+
+// Online-Speicher fuer den Hub: wird als /hub_online.json auf den Flash gelegt
+function onlineKonfig() {
+  const url = $("#online-url").value.trim();
+  try { localStorage.setItem("espboard-online", JSON.stringify({ url, auth: $("#online-auth").value })); } catch { /* egal */ }
+  if (!url) return {};
+  return { "hub_online.json": JSON.stringify({ wlan: "Simulator", passwort: "", url, auth: $("#online-auth").value.trim() }) };
+}
+try {
+  const o = JSON.parse(localStorage.getItem("espboard-online") || "null");
+  if (o) { $("#online-url").value = o.url || ""; $("#online-auth").value = o.auth || ""; }
+} catch { /* egal */ }
 
 let simDateien = null;
 async function simulatorDateien() {
   if (simDateien) return simDateien;
-  const namen = ["_boot.py", "_sim_machine.py", "_sim_time.py", "_sim_network.py", "_sim_espnow.py"];
+  const namen = ["_boot.py", "_sim_machine.py", "_sim_time.py", "_sim_network.py", "_sim_espnow.py", "requests.py"];
   simDateien = {};
   await Promise.all(namen.map(async (n) => {
     const r = await fetch(new URL("py/" + n, import.meta.url));
@@ -321,7 +350,7 @@ class Board {
     const alt = this.select.value;
     this.select.innerHTML = quelle.ordner.map((o) => `<option>${o}</option>`).join("");
     const wunsch = alt && quelle.ordner.includes(alt) ? alt
-      : (this.i === 0 ? ["Geometry-Dash", "ESP-Pong"] : ["ESP-Pong"]).find((o) => quelle.ordner.includes(o)) || quelle.ordner[0];
+      : [HUB, "ESP-Pong"].find((o) => quelle.ordner.includes(o)) || quelle.ordner[0];
     if (wunsch) this.select.value = wunsch;
   }
 
@@ -358,22 +387,27 @@ class Board {
     for (let p = 0; p < 40; p++) { this.io[IO.PWM_FREQ + p] = 0; this.io[IO.PWM_DUTY + p] = 0; }
   }
 
-  async start() {
+  // flash: Dateien nach machine.reset() - sonst frisch aus GitHub
+  async start(flash = null) {
     const ordner = this.select.value;
     if (!ordner || !quelle.ordner.includes(ordner)) return;
     if (!self.crossOriginIsolated) { this.log("SharedArrayBuffer ist nicht verfügbar – siehe Hinweis oben.", "e"); return; }
     this.stopp();
     this.zuruecksetzen();
-    this.konsole.textContent = "";
-    this.log(`Lade ${ordner} aus ${quelle.repo} @ ${quelle.branch} …`, "s");
     let dateien;
-    try {
-      dateien = { ...(await simulatorDateien()), ...(await programmDateien(ordner)) };
-    } catch (e) {
-      this.log("Fehler beim Laden: " + e.message, "e");
-      return;
+    if (flash) {
+      dateien = { ...flash, ...(await simulatorDateien()) };
+    } else {
+      this.konsole.textContent = "";
+      this.log(`Lade ${ordner} aus ${quelle.repo} @ ${quelle.branch} …`, "s");
+      try {
+        dateien = { ...(await simulatorDateien()), ...(await programmDateien(ordner)), ...onlineKonfig() };
+      } catch (e) {
+        this.log("Fehler beim Laden: " + e.message, "e");
+        return;
+      }
+      this.log("Dateien: " + Object.keys(dateien).filter((n) => !n.startsWith("_")).join(", "), "s");
     }
-    this.log("Dateien: " + Object.keys(dateien).filter((n) => !n.startsWith("_")).join(", "), "s");
     const w = new Worker(new URL("worker.js", import.meta.url), { type: "module" });
     this.worker = w;
     w.onmessage = (e) => {
@@ -381,7 +415,7 @@ class Board {
       if (m.t === "out") this.log(m.s);
       else if (m.t === "err") this.log(m.s, "e");
       else if (m.t === "running") this.log("MicroPython läuft – main.py gestartet.", "s");
-      else if (m.t === "reset") { this.log("machine.reset()", "s"); this.start(); }
+      else if (m.t === "reset") { this.log("machine.reset()", "s"); this.start(m.files); }
       else if (m.t === "end") { if (this.worker === w) { this.worker = null; } }
     };
     w.onerror = (e) => this.log("Worker-Fehler: " + (e.message || e), "e");

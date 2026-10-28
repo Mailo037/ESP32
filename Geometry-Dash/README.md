@@ -27,7 +27,7 @@ Beide `.py`-Dateien in den **Root-Ordner** des ESP kopieren (Thonny:
 | **S17** / Joystick-Taster / Joystick hoch | – | **Springen** (gedrückt halten = bei jeder Landung sofort wieder springen) |
 | **S5** | Übungsmodus an/aus | Pause |
 | **S4** | – | Zurück ins Menü |
-| Poti **RP3** (links) | Lautstärke der Musik, ganz links = aus | |
+| Poti **RP3** (links oben) | Lautstärke von Musik und Effekten, ganz links = stumm | |
 
 Anzeigen: Balken oben im OLED **und die 8 LEDs** = Fortschritt im Level,
 RGB-LED in der Levelfarbe, **rot** beim Absturz, kurz **weiß** beim Ring-Sprung.
