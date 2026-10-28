@@ -1,63 +1,62 @@
-# ESP32-Programme für das BZTG espBoard
+# espBoard-Simulator
 
-MicroPython-Programme für das **espBoard** (ESP32-WROOM-32, OLED 128×64,
-Joystick, Taster, Potis, LEDs, RGB-LED, Summer, BMP280) vom BZTG Oldenburg.
+Das espBoard im Browser – mit **echtem MicroPython** (WebAssembly). Die Seite
+lädt die Programm-Ordner live aus GitHub (Branch `main`, sonst der
+Standard-Branch) und führt `main.py` unverändert aus.
 
-| Ordner | Programm | Kurz |
-|---|---|---|
-| [`Hub/`](Hub/) | **ESP-Hub v2.0** *(neu)* | Spiele-Galerie mit App-Store: Spiele als `gal_*.py`, Updates, App-Menü (S4 / im Spiel S4+S16), S4+S5 zurück, Sandbox. Online über [esphub-steel.vercel.app](https://esphub-steel.vercel.app): Portal mit Konto, Board koppeln, Fern-Installation, App-Einreichungen und Admin |
-| [`ESP-Pong/`](ESP-Pong/) | **ESP-Pong v2.0** | Multiplayer-Pong über ESP-NOW mit Lobby: alle Boards im Raum sehen sich, jedes Board hat eine eigene Nummer, Host wählen oder einladen |
-| [`Space-Dodge/`](Space-Dodge/) | **Space Dodge v2.0** | Weltraum-Shooter mit Schild, Bombe, Munitions-LEDs und Bestenliste |
-| [`Geometry-Dash/`](Geometry-Dash/) | **Geometry Dash** *(neu)* | Würfel-Springspiel mit 3 Leveln, Ringen, Sprungpads, Übungsmodus und Musik |
-| [`3D-Render/`](3D-Render/) | **3D-Render v2.0** | Drahtgitter-Körper (Würfel bis Ikosaeder) mit dem Joystick drehen |
-| [`simulator/`](simulator/) | **espBoard-Simulator** *(neu)* | Das Board im Browser: lädt die Ordner aus GitHub und führt `main.py` mit echtem MicroPython aus – auch zwei Boards per ESP-NOW |
-| [`docs/espBoard.md`](docs/espBoard.md) | **Board-Doku** | Bauteile, Pinbelegung, Messprotokoll mit Sollwerten, Stromversorgung |
+**Öffnen:** <https://mailo037.github.io/ESP32-Programme/>
+(GitHub Pages muss dafür einmal eingeschaltet werden, siehe unten).
 
-![ESP-Pong Vorschau](ESP-Pong/vorschau.svg)
+## Was geht
 
-## Im Browser ausprobieren
+- Board nach dem echten Vorbild: 8 LEDs P7…P0, Potis RP3/RP0, Tasterkreuz
+  S17/S4/S5/S16, Joystick mit Taster S2, RGB-LED P8, OLED, Summer
+- Jedes Programm-Verzeichnis mit `main.py` erscheint automatisch in der Auswahl.
+- **Hub** (voreingestellt): Der Simulator legt alle anderen Ordner als
+  `gal_<Ordner>.py` dazu, wie der optionale Spiele-Import des Hub-Installers auf dem echten Board.
+- Der Flash bleibt bei `machine.reset()` / `soft_reset()` erhalten, z. B. für
+  Bestenlisten und den Spielwechsel im Hub. *Start* lädt alles frisch aus GitHub.
+  Neue Programme einfach als Ordner ins Repo legen.
+- **Zwei Boards** gleichzeitig – sie finden sich per ESP-NOW (für ESP-Pong).
+- **Messprotokoll live:** Spannungen an MP4, MP0, MP3, MP6, MP7
+- Konsole wie in Thonny: `print()`-Ausgaben und Fehlermeldungen mit Zeilennummer
+- Option „Echtes I²C-Tempo“: Display-Übertragungen dauern so lange wie am ESP32,
+  dann sieht man auch, was Teil-Updates bringen
 
-**<https://mailo037.github.io/ESP32-Programme/>** – der Simulator lädt alle Programme
-direkt aus diesem Repo (Branch `main`) und lässt sie auf einem nachgebauten
-espBoard laufen. Einmalig nötig: *Settings → Pages → Deploy from a branch →
-main / (root)*. Details: [`simulator/README.md`](simulator/README.md).
+Bedienung: Pfeiltasten = Joystick, Leertaste = Joystick-Taster, W/A/S/D =
+S17/S4/S16/S5, Q/E und Z/C = Potis. Oder alles mit Maus und Finger.
 
-## Schnellstart
+## GitHub Pages einschalten (einmalig)
 
-**Alle Spiele auf einmal (empfohlen):** Mit dem [Hub](Hub/) startet das Board
-mit einer Galerie, und das ständige Austauschen von `main.py` entfällt:
+1. Im Repo auf **Settings → Pages**.
+2. *Source:* **Deploy from a branch**, Branch **simulator**, Ordner **/ (root)** → *Save*.
+3. Nach ca. einer Minute ist die Seite unter
+   `https://mailo037.github.io/ESP32-Programme/` erreichbar.
 
-```powershell
-pip install mpremote
-python Hub/installieren.py COM3
-```
+Lokal geht es auch: im Repo-Ordner `python -m http.server` starten und
+<http://localhost:8000/> öffnen. Direkt als Datei (Doppelklick) geht
+es nicht, weil der Browser dann keine Worker und keinen gemeinsamen Speicher erlaubt.
 
-**Einzelnes Programm:**
+## So funktioniert es
 
-1. [Thonny](https://thonny.org) installieren, MicroPython (v1.2x) auf den ESP32 flashen.
-2. Ordner des gewünschten Programms öffnen.
-3. `main.py` **und** `ssd1306.py` in den **Root-Ordner** des ESP speichern
-   (Thonny: *Datei → Speichern unter → MicroPython-Gerät*).
-4. Board neu starten. Beim Start den Joystick loslassen (Kalibrierung).
+| Datei | Aufgabe |
+|---|---|
+| `index.html`, `app.js` | Board zeichnen, Eingaben, Programmliste aus GitHub, Worker starten |
+| `worker.js` | Ein Board = ein Web Worker mit MicroPython. Endlosschleifen und `sleep_ms` blockieren dort nicht die Seite |
+| `simcore.js` | Nachbau des SSD1306-Controllers (bekommt die echten I²C-Bytes) und ESP-NOW-Postfächer |
+| `py/_sim_*.py` | Ersatz für `machine`, `time`, `network`, `espnow` – leiten alles an den Worker weiter |
+| `py/_boot.py` | Setzt die Ersatz-Module ein und startet `main.py` als `__main__` |
+| `coi-serviceworker.js` | Setzt auf GitHub Pages die Header für `SharedArrayBuffer` |
+| `mp/` | MicroPython-WebAssembly 1.27.0 (MIT-Lizenz) |
 
-Mit `mpremote`:
+Was **nicht** nachgebaut ist: echtes WLAN, Bluetooth, `machine.Timer`,
+Interrupts und der BMP280 (der Sockel ist auf vielen Boards leer – die Programme
+kommen damit klar). Die Rechengeschwindigkeit im Browser ist höher als auf dem
+ESP32; das Display-Tempo wird mit „Echtes I²C-Tempo“ nachgebildet.
 
-```powershell
-cd ESP-Pong
-mpremote connect COM3 cp main.py :main.py + cp ssd1306.py :ssd1306.py + reset
-```
+## Getrennter Simulator-Branch
 
-**Herunterladen:** Auf GitHub *Code → Download ZIP* lädt alles auf einmal.
-
-## Was ist neu in v2.0?
-
-- **Gemeinsamer, schnellerer OLED-Treiber** (`ssd1306.py`, in jedem Ordner gleich):
-  Adressbefehle in einer einzigen I²C-Übertragung und neu `show_rect()`, das nur
-  einen Bildausschnitt überträgt. Kompatibel zum Original-Treiber.
-- **ESP-Pong:** Lobby für beliebig viele Boards, Board-Nummern, Host-Auswahl und
-  Einladungen, Teil-Updates des Displays, Ball-Vorhersage beim Gast → deutlich flüssiger.
-- **Space Dodge:** gleiches Spieltempo bei jeder Bildrate, BMP280 ohne Zusatzdatei,
-  kleinere Fehler behoben.
-- **3D-Render:** mehr FPS, zwei neue Körper, LEDs zeigen die Form.
-
-Details stehen in den READMEs der einzelnen Ordner.
+Die Web-Dateien liegen in diesem Branch direkt im Stamm. GitHub Pages kann
+den Branch `simulator` mit Ordner `/ (root)` verwenden, sobald er gepusht ist.
+Die Programme werden weiterhin aus dem Online-Repository geladen; die
+Umstellung der lokalen Verzeichnisstruktur aendert die Online-Quelle nicht.

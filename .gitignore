@@ -1,5 +1,2 @@
 __pycache__/
 *.pyc
-Hub/hub_online.json
-Hub/server/hub_daten.json
-Hub/server/hub_daten.tmp
