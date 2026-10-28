@@ -1,5 +1,9 @@
 __pycache__/
 *.pyc
-Hub/hub_online.json
-Hub/server/hub_daten.json
-Hub/server/hub_daten.tmp
+.vercel/
+node_modules/
+.env
+.env.*
+!.env.example
+server/hub_daten.json
+server/hub_daten.tmp

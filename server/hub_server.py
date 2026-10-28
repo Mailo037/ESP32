@@ -1,8 +1,8 @@
 # Online-Speicher fuer den ESP-Hub - laeuft auf jedem PC mit Python 3,
 # ohne Zusatzpakete und ohne Konto.
 #
-#   python Hub/server/hub_server.py                 (Port 8080)
-#   python Hub/server/hub_server.py --port 9000 --auth GEHEIM
+#   python server/hub_server.py                 (Port 8080)
+#   python server/hub_server.py --port 9000 --auth GEHEIM
 #
 # Spricht dasselbe REST wie die Firebase Realtime Database:
 #   GET/PUT/PATCH/DELETE /<pfad>.json   (+ ?auth=...)
@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 DATEI = pathlib.Path(__file__).with_name("hub_daten.json")
-REPO = pathlib.Path(__file__).resolve().parents[2]
+REPO = pathlib.Path(__file__).resolve().parents[1]
 OHNE_ORDNER = {"Hub", "simulator", "docs"}
 MAX_BODY = 16384
 sperre = threading.Lock()

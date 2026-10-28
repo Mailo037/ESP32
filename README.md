@@ -1,63 +1,113 @@
-# ESP32-Programme für das BZTG espBoard
+# ESP-Hub-Backend (Vercel)
 
-MicroPython-Programme für das **espBoard** (ESP32-WROOM-32, OLED 128×64,
-Joystick, Taster, Potis, LEDs, RGB-LED, Summer, BMP280) vom BZTG Oldenburg.
+Bridge zwischen den Boards und Firebase, dazu das Portal (`/`) und der Admin
+(`/admin`). Läuft ohne Abhängigkeiten auf der Node-Laufzeit von Vercel.
 
-| Ordner | Programm | Kurz |
+Live: **https://esphub-steel.vercel.app** (Vercel-Projekt `esphub`)
+
+## Branch `service` mit Vercel verbinden
+
+Dieser Branch ist ein eigenstaendiges Service-Projekt. `api/`, `lib/`,
+`package.json` und `vercel.json` liegen direkt im Repository-Stamm.
+
+1. Den lokalen Branch zuerst nach GitHub veroeffentlichen:
+   `git push -u origin service` (im Ordner `esp-service`).
+2. In Vercel das Repository `Mailo037/ESP32-Programme` verbinden oder beim
+   bestehenden Projekt die Einstellungen anpassen.
+3. **Root Directory:** Repository-Stamm (`.`); einen bisherigen Eintrag
+   `Hub/vercel` entfernen. **Framework Preset:** Other. Kein Build Command
+   und kein Output Directory ueberschreiben; der Service braucht keinen
+   Frontend-Build und keine zusaetzlichen npm-Pakete.
+4. Unter **Settings -> Environments -> Production -> Branch Tracking** den
+   Branch **service** eintragen und speichern.
+5. Die unten genannten Pflichtvariablen fuer **Production** setzen bzw.
+   beim bestehenden Projekt beibehalten. Danach den Branch `service` deployen.
+
+Weitere Pushes auf `service` loesen automatisch ein Production-Deployment aus.
+Die `vercel.json` erlaubt Git-Deployments fuer `service` und deaktiviert sie
+fuer andere Branches, sofern diese Konfiguration auf dem betreffenden Branch
+vorliegt. Die Branch-Tracking-Einstellung selbst wird im Vercel-Projekt gesetzt.
+Ein vorhandener Ignored Build Step darf `service` nicht ueberspringen.
+
+**App-Quelle getrennt vom Deployment-Branch:** `GITHUB_BRANCH` bleibt vorerst
+`main`, ebenso der Standardwert im Code. Nicht auf `service` setzen: Dieser
+Branch enthaelt weder Spiele noch die Hub-Firmware. Die Pruefsummen werden
+weiter aus `main/Hub/` geladen. Die lokalen Branches `programs` und `hub`
+sind noch nicht als gemeinsame Online-Quelle konfiguriert.
+
+Dokumentation: [Vercel Git-Deployments](https://vercel.com/docs/git) und
+[Branch-Regeln](https://vercel.com/docs/project-configuration/git-configuration).
+
+## Geheimnisse – nur in Vercel
+
+Alles Geheime gehört **nur** in *Vercel → Projekt esphub → Settings →
+Environment Variables*. Nicht ins Repo, nicht in den Chat, nicht aufs Board.
+
+| Variable | Pflicht | Inhalt |
 |---|---|---|
-| [`Hub/`](Hub/) | **ESP-Hub v2.0** *(neu)* | Spiele-Galerie mit App-Store: Spiele als `gal_*.py`, Updates, App-Menü (S4 / im Spiel S4+S16), S4+S5 zurück, Sandbox. Online über [esphub-steel.vercel.app](https://esphub-steel.vercel.app): Portal mit Konto, Board koppeln, Fern-Installation, App-Einreichungen und Admin |
-| [`ESP-Pong/`](ESP-Pong/) | **ESP-Pong v2.0** | Multiplayer-Pong über ESP-NOW mit Lobby: alle Boards im Raum sehen sich, jedes Board hat eine eigene Nummer, Host wählen oder einladen |
-| [`Space-Dodge/`](Space-Dodge/) | **Space Dodge v2.0** | Weltraum-Shooter mit Schild, Bombe, Munitions-LEDs und Bestenliste |
-| [`Geometry-Dash/`](Geometry-Dash/) | **Geometry Dash** *(neu)* | Würfel-Springspiel mit 3 Leveln, Ringen, Sprungpads, Übungsmodus und Musik |
-| [`3D-Render/`](3D-Render/) | **3D-Render v2.0** | Drahtgitter-Körper (Würfel bis Ikosaeder) mit dem Joystick drehen |
-| [`simulator/`](simulator/) | **espBoard-Simulator** *(neu)* | Das Board im Browser: lädt die Ordner aus GitHub und führt `main.py` mit echtem MicroPython aus – auch zwei Boards per ESP-NOW |
-| [`docs/espBoard.md`](docs/espBoard.md) | **Board-Doku** | Bauteile, Pinbelegung, Messprotokoll mit Sollwerten, Stromversorgung |
+| `FIREBASE_DATABASE_URL` | ja | URL der Realtime Database, z. B. `https://esp32-services-default-rtdb.europe-west1.firebasedatabase.app` |
+| `FIREBASE_SERVICE_ACCOUNT` | ja | kompletter Inhalt der Dienstkonto-JSON (siehe unten), Typ **Sensitive** |
+| `ADMIN_TOKEN` | ja | dein Admin-Passwort, mindestens 8 Zeichen, lang und zufällig, Typ **Sensitive** |
+| `HUB_TOKEN` | nein | zusätzliches Passwort für die Boards (`auth` in `hub_online.json`) |
+| `GITHUB_REPO` / `GITHUB_BRANCH` | nein | Quelle des App-Stores (gesetzt: `Mailo037/ESP32-Programme` / `main`) |
+| `GITHUB_TOKEN` | nein | nur bei sehr vielen Abrufen (GitHub-Limit) |
 
-![ESP-Pong Vorschau](ESP-Pong/vorschau.svg)
+Nach dem Ändern von Variablen einmal neu deployen: *Deployments → … → Redeploy*.
 
-## Im Browser ausprobieren
+## Firebase einrichten
 
-**<https://mailo037.github.io/ESP32-Programme/>** – der Simulator lädt alle Programme
-direkt aus diesem Repo (Branch `main`) und lässt sie auf einem nachgebauten
-espBoard laufen. Einmalig nötig: *Settings → Pages → Deploy from a branch →
-main / (root)*. Details: [`simulator/README.md`](simulator/README.md).
+1. [Firebase-Konsole](https://console.firebase.google.com), Projekt `esp32-services`.
+2. **Build → Realtime Database → Datenbank erstellen.** Region egal, z. B. `europe-west1`.
+   Die angezeigte URL ist `FIREBASE_DATABASE_URL`.
+3. **Regeln:** den Inhalt von [`firebase-regeln.json`](firebase-regeln.json)
+   einfügen, also alles gesperrt. Nur der Server greift über das Dienstkonto zu,
+   und das Dienstkonto umgeht die Regeln.
+4. **Projekteinstellungen (Zahnrad) → Dienstkonten → Neuen privaten Schlüssel
+   generieren.** Es wird eine JSON-Datei heruntergeladen. Ihren kompletten Inhalt
+   kopierst du in `FIREBASE_SERVICE_ACCOUNT` in Vercel. Danach die Datei vom PC
+   löschen.
 
-## Schnellstart
+Die `firebaseConfig` mit `apiKey` aus der Web-App-Einrichtung brauchst du hier
+**nicht**. Sie ist für Browser-Apps gedacht und gibt keinen Zugriff auf die Datenbank.
 
-**Alle Spiele auf einmal (empfohlen):** Mit dem [Hub](Hub/) startet das Board
-mit einer Galerie, und das ständige Austauschen von `main.py` entfällt:
+## Ablage in Firebase
 
-```powershell
-pip install mpremote
-python Hub/installieren.py COM3
+```
+esphub/<Spiel>/boards/<id>         Spielstände (Limit je App/Board)
+esphub/<Spiel>/global              gemeinsame Werte
+esphub/<Spiel>/listen/<Liste>/<id> Bestenlisten
+esphub_admin/boards/<id>           Anmeldung: Apps, Nutzung, Flash, Hub-Prüfung, Konto, Schlüssel-Hash
+esphub_admin/konten/<name>         Konto (scrypt-Passwort-Hash), gekoppelte Boards
+esphub_admin/kopplung/<id>         offene Kopplung (10 min)
+esphub_admin/auftraege/<id>        Fern-Installation und Deinstallation
+esphub_admin/apps/<id>             freigegebene Uploads (Store)
+esphub_admin/privat/<konto>/<id>   private Apps eines Kontos
+esphub_admin/einreichungen/<id>    Apps zur Prüfung
+esphub_admin/limits, belegt, gesperrt, versteckt, hoechstpunkte, einstellungen
 ```
 
-**Einzelnes Programm:**
+## Routen
 
-1. [Thonny](https://thonny.org) installieren, MicroPython (v1.2x) auf den ESP32 flashen.
-2. Ordner des gewünschten Programms öffnen.
-3. `main.py` **und** `ssd1306.py` in den **Root-Ordner** des ESP speichern
-   (Thonny: *Datei → Speichern unter → MicroPython-Gerät*).
-4. Board neu starten. Beim Start den Joystick loslassen (Kalibrierung).
+| Route | Wer | Zweck |
+|---|---|---|
+| `POST /melden` | Board | anmelden (beim ersten Mal: Board-Schlüssel), Apps, Nutzung, Hub-Prüfsummen, Aufträge |
+| `GET /apps`, `/apps/<id>` | Board | Store: öffentliche + private Apps des Besitzers |
+| `/esphub/<…>.json` | Board | Online-Speicher, geprüft |
+| `GET /limits/<id>/<app>` | Board | Speicherlimits |
+| `GET /kopplung` | Board | Code für das Display |
+| `POST /hochladen` | Board | lokale App ins Konto oder zur Prüfung |
+| `/`, `/portal/...` | alle / Konto | Portal |
+| `/admin`, `/admin/api/...` | Admin | Verwaltung |
 
-Mit `mpremote`:
+Jede Board-Anfrage trägt `?board=<id>&t=<Schlüssel>`. Admin- und
+Portal-Sitzungen laufen über signierte, `HttpOnly`/`Secure`/`SameSite=Strict`-Cookies.
+Ändernde Aufrufe brauchen zusätzlich eine eigene Kopfzeile (Schutz gegen CSRF).
 
-```powershell
-cd ESP-Pong
-mpremote connect COM3 cp main.py :main.py + cp ssd1306.py :ssd1306.py + reset
-```
+## Lokal testen
 
-**Herunterladen:** Auf GitHub *Code → Download ZIP* lädt alles auf einmal.
+`api/hub.js` lässt sich mit einem normalen `node:http`-Server starten. Als Firebase
+dient dabei `server/hub_server.py`: Es spricht dasselbe REST, also
+`FIREBASE_DATABASE_URL=http://127.0.0.1:8080` und `FIREBASE_SECRET=<auth>` setzen.
 
-## Was ist neu in v2.0?
-
-- **Gemeinsamer, schnellerer OLED-Treiber** (`ssd1306.py`, in jedem Ordner gleich):
-  Adressbefehle in einer einzigen I²C-Übertragung und neu `show_rect()`, das nur
-  einen Bildausschnitt überträgt. Kompatibel zum Original-Treiber.
-- **ESP-Pong:** Lobby für beliebig viele Boards, Board-Nummern, Host-Auswahl und
-  Einladungen, Teil-Updates des Displays, Ball-Vorhersage beim Gast → deutlich flüssiger.
-- **Space Dodge:** gleiches Spieltempo bei jeder Bildrate, BMP280 ohne Zusatzdatei,
-  kleinere Fehler behoben.
-- **3D-Render:** mehr FPS, zwei neue Körper, LEDs zeigen die Form.
-
-Details stehen in den READMEs der einzelnen Ordner.
+Der optionale Python-Server hat in diesem reinen Service-Branch keine lokalen
+Spiele fuer seinen eigenen App-Katalog. Der Vercel-App-Store laedt sie aus GitHub.
