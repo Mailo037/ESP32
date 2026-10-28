@@ -9,9 +9,17 @@ Joystick, Taster, Potis, LEDs, RGB-LED, Summer, BMP280) vom BZTG Oldenburg.
 | [`Space-Dodge/`](Space-Dodge/) | **Space Dodge v2.0** | Weltraum-Shooter mit Schild, Bombe, Munitions-LEDs und Bestenliste |
 | [`Geometry-Dash/`](Geometry-Dash/) | **Geometry Dash** *(neu)* | Würfel-Springspiel mit 3 Leveln, Ringen, Sprungpads, Übungsmodus und Musik |
 | [`3D-Render/`](3D-Render/) | **3D-Render v2.0** | Drahtgitter-Körper (Würfel bis Ikosaeder) mit dem Joystick drehen |
+| [`simulator/`](simulator/) | **espBoard-Simulator** *(neu)* | Das Board im Browser: lädt die Ordner aus GitHub und führt `main.py` mit echtem MicroPython aus – auch zwei Boards per ESP-NOW |
 | [`docs/espBoard.md`](docs/espBoard.md) | **Board-Doku** | Bauteile, Pinbelegung, Messprotokoll mit Sollwerten, Stromversorgung |
 
 ![ESP-Pong Vorschau](ESP-Pong/vorschau.svg)
+
+## Im Browser ausprobieren
+
+**<https://mailo037.github.io/ESP32-Programme/>** – der Simulator lädt alle Programme
+direkt aus diesem Repo (Branch `main`) und lässt sie auf einem nachgebauten
+espBoard laufen. Einmalig nötig: *Settings → Pages → Deploy from a branch →
+main / (root)*. Details: [`simulator/README.md`](simulator/README.md).
 
 ## Schnellstart
 

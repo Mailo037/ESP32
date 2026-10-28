@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>espBoard-Simulator</title>
+<meta name="description" content="Das BZTG espBoard im Browser: lädt die Programme aus GitHub und führt main.py mit echtem MicroPython aus.">
+<script src="coi-serviceworker.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="stylesheet" crossorigin="anonymous" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Werkbank bei Nacht: dunkler Tisch, grüne Platine, cyanfarbenes OLED.
+   Bewusst nur ein (dunkles) Farbschema - wie das echte Board auf dem Tisch. */
+:root {
+  --tisch: #11161a;
+  --tisch-2: #182027;
+  --linie: #2a3640;
+  --text: #dfe8ee;
+  --text-2: #92a4b1;
+  --pcb: #1d7a3b;
+  --pcb-dunkel: #145a2b;
+  --silk: #f2f5ef;
+  --oled: #6fe3ff;
+  --oled-aus: #050a0e;
+  --led-rot: #ff3b2f;
+  --led-gelb: #ffd23a;
+  --akzent: #ffb02e;
+  --fehler: #ff7a6b;
+  --f-silk: "Barlow Condensed", "Arial Narrow", Arial, sans-serif;
+  --f-text: "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
+  --f-mono: "IBM Plex Mono", Consolas, Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { background: var(--tisch); color: var(--text); }
+body { font-family: var(--f-text); font-size: 15px; line-height: 1.5; margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.seite { max-width: 1320px; margin: 0 auto; padding-block: 20px 48px; display: grid; gap: 20px; }
+
+header.kopf { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+h1 { font-family: var(--f-silk); font-weight: 700; font-size: clamp(28px, 4vw, 40px); letter-spacing: .02em; margin: 0; line-height: 1; text-wrap: balance; }
+h1 small { display: block; font: 500 14px/1.4 var(--f-text); color: var(--text-2); letter-spacing: 0; margin-top: 6px; }
+.quelle { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--text-2); }
+.quelle input { font: 500 13px var(--f-mono); background: var(--tisch-2); color: var(--text); border: 1px solid var(--linie); border-radius: 6px; padding: 6px 8px; width: 9.5em; }
+.quelle input#repo { width: 15em; }
+button, select { font: 600 14px var(--f-text); color: var(--text); background: var(--tisch-2); border: 1px solid var(--linie); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+button:hover, select:hover { border-color: var(--text-2); }
+button.haupt { background: var(--akzent); color: #1d1405; border-color: var(--akzent); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.status { font-size: 13px; color: var(--text-2); min-height: 1.5em; }
+.status.fehler { color: var(--fehler); }
+
+.haupt-bereich { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 20px; align-items: start; }
+.boards { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); }
+.board-karte { display: grid; gap: 10px; min-width: 0; width: 100%; max-width: 640px; }
+.board-leiste { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.board-leiste .name { font: 700 18px var(--f-silk); letter-spacing: .04em; margin-right: auto; }
+.board-karte.aktiv .board { box-shadow: 0 0 0 3px var(--akzent), 0 18px 40px rgba(0,0,0,.45); }
+
+/* ---------- Platine ---------- */
+.board { position: relative; width: 100%; aspect-ratio: 990 / 960; container-type: inline-size;
+  background: radial-gradient(120% 90% at 30% 20%, #23894a 0%, var(--pcb) 45%, var(--pcb-dunkel) 100%);
+  border-radius: 1.2cqw; box-shadow: 0 18px 40px rgba(0,0,0,.45); user-select: none; -webkit-user-select: none; touch-action: none; overflow: hidden; }
+.silk { position: absolute; font-family: var(--f-silk); font-weight: 600; color: var(--silk); font-size: 2.4cqw; line-height: 1; white-space: nowrap; pointer-events: none; }
+.schraube { position: absolute; width: 3.6cqw; height: 3.6cqw; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #f4f4f4, #9a9a9a 60%, #6c6c6c); }
+.schraube::after { content: ""; position: absolute; inset: 30% 45%; background: #555; }
+.leds { position: absolute; left: 7.5%; top: 6.5%; width: 33%; display: flex; justify-content: space-between; }
+.led { width: 3.1cqw; height: 3.1cqw; border-radius: 50% 50% 45% 45%; background: color-mix(in srgb, var(--c) 42%, #2b2b24); box-shadow: inset 0 -.4cqw .6cqw rgba(0,0,0,.35); transition: background .05s; }
+.led.an { background: var(--c); box-shadow: 0 0 1.2cqw .4cqw var(--c), 0 0 3cqw .8cqw color-mix(in srgb, var(--c) 45%, transparent); }
+.rn { position: absolute; left: 16%; top: 1.6%; width: 21%; height: 1.6%; background: #111; border-radius: .3cqw; }
+.poti { position: absolute; width: 11cqw; height: 11cqw; border-radius: 50%; background: radial-gradient(circle, #2a2a2a 55%, #111 57%); cursor: grab; }
+.poti .knopf { position: absolute; inset: 20%; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #ff6a5a, #d81e12 60%, #a3140b); box-shadow: 0 .4cqw .8cqw rgba(0,0,0,.5); }
+.poti .knopf::after { content: ""; position: absolute; left: 46%; top: 6%; width: 8%; height: 34%; background: #fff3; border-radius: 1cqw; }
+.esp { position: absolute; left: -1%; top: 15.5%; width: 53%; height: 27.5%; background: #121417; border-radius: 1.2cqw; box-shadow: inset 0 0 0 .3cqw #1f2328; }
+.esp .modul { position: absolute; left: 50%; top: 13%; width: 36%; height: 74%; background: linear-gradient(160deg, #d9d9d9, #a9abae); border-radius: .5cqw; display: grid; place-items: center; font: 700 2.6cqw var(--f-silk); color: #555b; }
+.esp .usb { position: absolute; left: -1%; top: 38%; width: 9%; height: 24%; background: linear-gradient(#c9ccd0, #8d9197); border-radius: .8cqw; }
+.esp .pwr { position: absolute; left: 41%; top: 44%; width: 1.4cqw; height: 1.4cqw; border-radius: 50%; background: #ff2a1f; box-shadow: 0 0 1.5cqw .4cqw #ff2a1f; }
+.esp .reihe { position: absolute; left: 14%; right: 4%; height: 2.4cqw; background: radial-gradient(circle, #c8c8c8 32%, transparent 36%) 0 0 / 3.4% 100% repeat-x; }
+.oled-modul { position: absolute; left: 63%; top: 24%; width: 31.5%; height: 33%; background: #1b3f86; border-radius: .8cqw; }
+.oled-modul .glas { position: absolute; left: 6%; right: 6%; top: 15%; height: 60%; background: #000; border-radius: .4cqw; padding: 3% 3%; box-sizing: border-box; }
+.oled-modul canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+.oled-modul .pins { position: absolute; top: 2%; left: 30%; font: 600 1.6cqw var(--f-silk); color: #e8eef7; letter-spacing: .05em; }
+.bmp { position: absolute; left: 72%; top: 18%; width: 15%; height: 3cqw; background: radial-gradient(circle, #c9a227 25%, #111 30%) 0 0 / 16.66% 100% repeat-x; border-radius: .3cqw; }
+.taster { position: absolute; width: 7cqw; height: 7cqw; background: linear-gradient(145deg, #e9d7a6, #b79d5e); border-radius: .6cqw; cursor: pointer; display: grid; place-items: center; box-shadow: 0 .4cqw .6cqw rgba(0,0,0,.35); }
+.taster::after { content: ""; width: 52%; height: 52%; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #3b3b3b, #0f0f0f); box-shadow: 0 .35cqw 0 #000; transition: transform .04s; }
+.taster.gedrueckt::after { transform: translateY(.3cqw) scale(.94); box-shadow: 0 0 0 #000; background: #050505; }
+.taster.gedrueckt { box-shadow: 0 0 0 .5cqw var(--akzent); }
+.rgb { position: absolute; left: 59.5%; top: 72.5%; width: 4.4cqw; height: 4.4cqw; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #ffffffcc, #d8dde2aa 50%, #9aa3ab88); }
+.rgb .licht { position: absolute; inset: -30%; border-radius: 50%; opacity: 0; transition: opacity .05s; }
+.joystick { position: absolute; left: 73%; top: 60.5%; width: 24%; aspect-ratio: 1; background: linear-gradient(145deg, #cfd2d6, #8d9196); border-radius: 1cqw; box-shadow: 0 .6cqw 1.2cqw rgba(0,0,0,.45); touch-action: none; cursor: grab; }
+.joystick .orange-a { position: absolute; left: 22%; top: -9%; width: 40%; height: 16%; background: #f2a531; border-radius: .6cqw; }
+.joystick .orange-b { position: absolute; left: -9%; top: 32%; width: 16%; height: 36%; background: #f2a531; border-radius: .6cqw; }
+.joystick .mulde { position: absolute; inset: 14%; border-radius: 50%; background: radial-gradient(circle, #222 0%, #050505 70%); }
+.joystick .stick { position: absolute; left: 50%; top: 50%; width: 34%; height: 34%; margin: -17% 0 0 -17%; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #444, #111 70%); box-shadow: 0 .6cqw 1cqw rgba(0,0,0,.6); }
+.joystick.gedrueckt .stick { background: radial-gradient(circle at 40% 35%, #6a5420, #2a1d05 70%); }
+.bauteil-markiert { animation: puls 1s ease-in-out 3; }
+@keyframes puls { 50% { outline: .8cqw solid var(--akzent); outline-offset: .8cqw; } }
+.nummer { position: absolute; width: 4cqw; height: 4cqw; border-radius: 50%; background: #fff; color: #111; font: 700 2.6cqw/4cqw var(--f-silk); text-align: center; box-shadow: 0 0 0 .3cqw #1117; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.zeige-nummern .nummer { opacity: .95; }
+.salat { position: absolute; left: 44%; top: 88.5%; background: #fff; color: #111; font: 600 3cqw var(--f-text); padding: .2cqw 1cqw; border-radius: .3cqw; transform: rotate(-1deg); }
+
+.konsole { background: #070b0e; border: 1px solid var(--linie); border-radius: 8px; font: 12.5px/1.45 var(--f-mono); color: #b9d6c3; padding: 8px 10px; height: 120px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.konsole .e { color: var(--fehler); }
+.konsole .s { color: var(--text-2); }
+
+/* ---------- Seitenleiste ---------- */
+aside { display: grid; gap: 16px; min-width: 0; }
+.kasten { background: var(--tisch-2); border: 1px solid var(--linie); border-radius: 10px; padding: 14px 16px; display: grid; gap: 10px; }
+.kasten h2 { font: 700 19px var(--f-silk); letter-spacing: .04em; margin: 0; }
+.kasten p { margin: 0; color: var(--text-2); font-size: 13.5px; }
+.tasten { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13.5px; align-items: baseline; }
+kbd { font: 500 12px var(--f-mono); background: #0c1114; border: 1px solid var(--linie); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+table.mess { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.mess td { padding: 5px 0; border-bottom: 1px solid var(--linie); vertical-align: middle; }
+table.mess td.wert { text-align: right; font: 500 14px var(--f-mono); font-variant-numeric: tabular-nums; width: 5.5em; }
+.balken { height: 6px; background: #0c1114; border-radius: 3px; overflow: hidden; margin-top: 3px; }
+.balken i { display: block; height: 100%; width: 0; background: var(--oled); }
+ol.teile { margin: 0; padding-left: 1.4em; display: grid; gap: 4px; font-size: 13.5px; }
+ol.teile button { all: unset; cursor: pointer; color: var(--text); border-bottom: 1px dotted var(--text-2); }
+ol.teile button:hover, ol.teile button:focus-visible { color: var(--akzent); border-color: var(--akzent); }
+.optionen { display: grid; gap: 6px; font-size: 13.5px; }
+.optionen label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.hinweis { border: 1px solid #6b4b16; background: #2a1f0c; color: #ffd9a0; border-radius: 10px; padding: 12px 14px; font-size: 14px; }
+.hinweis[hidden] { display: none; }
+a { color: var(--oled); }
+footer { color: var(--text-2); font-size: 13px; }
+@media (max-width: 980px) { .haupt-bereich { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="seite">
+  <header class="kopf">
+    <h1>espBoard-Simulator
+      <small>Lädt die Programme direkt aus GitHub und führt <code>main.py</code> mit echtem MicroPython aus.</small>
+    </h1>
+    <form class="quelle" id="quelle">
+      <label for="repo">Repo</label><input id="repo" value="Mailo037/ESP32-Programme" spellcheck="false">
+      <label for="branch">Branch</label><input id="branch" value="main" spellcheck="false">
+      <button type="submit">Neu laden</button>
+    </form>
+  </header>
+  <div class="status" id="status" role="status">Lade Programmliste …</div>
+  <div class="hinweis" id="hinweis" hidden></div>
+
+  <div class="haupt-bereich">
+    <div class="boards" id="boards"></div>
+
+    <aside>
+      <section class="kasten">
+        <h2>Bedienung</h2>
+        <p>Klick auf ein Board macht es aktiv. Die Tastatur steuert das aktive Board; Tasten und Joystick gehen auch mit Maus oder Finger.</p>
+        <div class="tasten">
+          <span><kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd></span><span>Joystick</span>
+          <kbd>Leertaste</kbd><span>Joystick-Taster (S2)</span>
+          <kbd>W</kbd><span>S17 (oben)</span>
+          <kbd>A</kbd><span>S4 (links)</span>
+          <kbd>D</kbd><span>S5 (rechts)</span>
+          <kbd>S</kbd><span>S16 (unten)</span>
+          <span><kbd>Q</kbd><kbd>E</kbd></span><span>Poti RP3 drehen</span>
+          <span><kbd>Z</kbd><kbd>C</kbd></span><span>Poti RP0 drehen</span>
+        </div>
+        <p>Potis: mit der Maus hoch/runter ziehen oder am Mausrad drehen.</p>
+      </section>
+
+      <section class="kasten">
+        <h2>Messprotokoll live</h2>
+        <p>Spannungen am aktiven Board, gemessen gegen GND – wie mit dem Multimeter.</p>
+        <table class="mess" id="mess"></table>
+      </section>
+
+      <section class="kasten">
+        <h2>Bauteile</h2>
+        <p>Antippen zeigt das Bauteil auf dem Board.</p>
+        <ol class="teile" id="teile"></ol>
+      </section>
+
+      <section class="kasten">
+        <h2>Optionen</h2>
+        <div class="optionen">
+          <label><input type="checkbox" id="opt-ton"> Summer hörbar</label>
+          <label><input type="checkbox" id="opt-timing" checked> Echtes I²C-Tempo (Display-Übertragung dauert wie am ESP32)</label>
+          <label><input type="checkbox" id="opt-nummern"> Bauteil-Nummern einblenden</label>
+        </div>
+        <button type="button" id="zweites">+ Zweites Board (für ESP-Pong)</button>
+      </section>
+    </aside>
+  </div>
+  <footer>
+    MicroPython läuft als WebAssembly (MIT-Lizenz). Nachgebaut sind Pins, ADC, PWM, das SSD1306-OLED an I²C und ESP-NOW zwischen den Boards.
+    Der BMP280-Sockel ist – wie auf vielen echten Boards – leer.
+  </footer>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
