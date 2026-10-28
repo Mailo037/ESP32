@@ -22,6 +22,10 @@ from machine import Pin, ADC, I2C, PWM
 from ssd1306 import SSD1306_I2C
 from time import sleep_ms, ticks_ms, ticks_diff, ticks_add
 import math
+try:
+    import hub          # gibt es nur, wenn das Spiel aus dem ESP-Hub startet
+except ImportError:
+    hub = None
 
 # =====================================================================
 #  EINSTELLUNGEN
@@ -580,6 +584,13 @@ def menue(nr, rekorde, uebung, h0):
     t5 = Taste(S5)
     sperre = 0
     t0 = ticks_ms()
+    # bester Wert aller Boards je Level (aus dem ESP-Hub)
+    welt_rekord = None
+    if hub:
+        welt_rekord = []
+        for i in range(len(LEVELS)):
+            l = hub.bestenliste("level%d" % i, 1)
+            welt_rekord.append(max(rekorde[i], l[0][1] if l else 0))
     while True:
         now = ticks_ms()
         h = hJoys.read_u16() - h0
@@ -606,7 +617,10 @@ def menue(nr, rekorde, uebung, h0):
         oled.text(">", 120, 22)
         mitte(name, 18)
         mitte("*" * sterne, 30)
-        mitte("Rekord %d%%" % rekorde[nr], 42)
+        if welt_rekord is not None:
+            mitte("Du %d%% Top %d%%" % (rekorde[nr], welt_rekord[nr]), 42)
+        else:
+            mitte("Rekord %d%%" % rekorde[nr], 42)
         oled.text("S5 Uebung:" + ("AN" if uebung else "AUS"), 0, 56)
         # kleiner huepfender Wuerfel als Deko
         t = ticks_diff(now, t0) % 600
@@ -763,6 +777,8 @@ def spielen(nr, rekorde, uebung, v0):
             if not uebung:
                 rekorde[nr] = 100
                 rekorde_schreiben(rekorde)
+                if hub:
+                    hub.eintragen("level%d" % nr, 100)
             sieg(lv, versuche, uebung)
             return
         # Absturz
@@ -770,6 +786,8 @@ def spielen(nr, rekorde, uebung, v0):
         if not uebung and pz > rekorde[nr]:
             rekorde[nr] = pz
             rekorde_schreiben(rekorde)
+            if hub:
+                hub.eintragen("level%d" % nr, pz)
         absturz_animation(lv, sp.x - SPIELER_X, SPIELER_X, int(sp.y))
         oled.fill_rect(36, 24, 56, 14, 0)
         oled.rect(36, 24, 56, 14, 1)

@@ -7,7 +7,9 @@
 #
 # Aus jedem Ordner mit main.py wird gal_<Ordner>.py, z. B.
 # ESP-Pong/main.py -> gal_ESP_Pong.py. Weitere .py-Dateien hinter dem Port
-# kommen ebenfalls als gal_<Name>.py dazu. Thonny vorher schliessen.
+# kommen ebenfalls als gal_<Name>.py dazu. Liegt Hub/hub_online.json da
+# (Vorlage: hub_online.beispiel.json), wird sie mitkopiert und der Hub
+# speichert online. Thonny vorher schliessen.
 import pathlib
 import re
 import subprocess
@@ -27,7 +29,10 @@ def main():
     args = sys.argv[1:]
     port = args.pop(0) if args and not args[0].endswith(".py") else "auto"
 
-    kopien = [(HUB / "main.py", "main.py"), (HUB / "ssd1306.py", "ssd1306.py")]
+    kopien = [(HUB / "main.py", "main.py"), (HUB / "ssd1306.py", "ssd1306.py"),
+              (HUB / "hub_online.py", "hub_online.py")]
+    if (HUB / "hub_online.json").exists():          # Online-Speicher (nicht im Repo)
+        kopien.append((HUB / "hub_online.json", "hub_online.json"))
     for ordner in sorted(REPO.iterdir()):
         if ordner.is_dir() and ordner.name not in OHNE and (ordner / "main.py").exists():
             kopien.append((ordner / "main.py", gal_name(ordner.name) + ".py"))

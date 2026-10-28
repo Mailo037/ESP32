@@ -1,0 +1,6 @@
+{
+  "wlan": "Name-des-WLANs",
+  "passwort": "WLAN-Passwort",
+  "url": "http://192.168.1.20:8080",
+  "auth": ""
+}

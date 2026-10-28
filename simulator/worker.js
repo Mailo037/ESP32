@@ -120,6 +120,18 @@ const hw = {
     }
   },
   en_rssi: () => lastRssi,
+  // HTTP fuer requests.py: synchron, der Python-Code wartet wie am ESP32
+  http: (methode, url, body, mitBody) => {
+    try {
+      const x = new XMLHttpRequest();
+      x.open(methode, url, false);
+      if (mitBody) x.setRequestHeader("Content-Type", "application/json");
+      x.send(mitBody ? body : null);
+      return x.status + "\n" + x.responseText;
+    } catch (e) {
+      return "0\n" + (e && e.message ? e.message : e);
+    }
+  },
 };
 
 onmessage = async (e) => {

@@ -134,10 +134,22 @@ async function programmDateien(ordner) {
   return dateien;
 }
 
+// Online-Speicher fuer den Hub: wird als /hub_online.json auf den Flash gelegt
+function onlineKonfig() {
+  const url = $("#online-url").value.trim();
+  try { localStorage.setItem("espboard-online", JSON.stringify({ url, auth: $("#online-auth").value })); } catch { /* egal */ }
+  if (!url) return {};
+  return { "hub_online.json": JSON.stringify({ wlan: "Simulator", passwort: "", url, auth: $("#online-auth").value.trim() }) };
+}
+try {
+  const o = JSON.parse(localStorage.getItem("espboard-online") || "null");
+  if (o) { $("#online-url").value = o.url || ""; $("#online-auth").value = o.auth || ""; }
+} catch { /* egal */ }
+
 let simDateien = null;
 async function simulatorDateien() {
   if (simDateien) return simDateien;
-  const namen = ["_boot.py", "_sim_machine.py", "_sim_time.py", "_sim_network.py", "_sim_espnow.py"];
+  const namen = ["_boot.py", "_sim_machine.py", "_sim_time.py", "_sim_network.py", "_sim_espnow.py", "requests.py"];
   simDateien = {};
   await Promise.all(namen.map(async (n) => {
     const r = await fetch(new URL("py/" + n, import.meta.url));
@@ -382,7 +394,7 @@ class Board {
       this.konsole.textContent = "";
       this.log(`Lade ${ordner} aus ${quelle.repo} @ ${quelle.branch} …`, "s");
       try {
-        dateien = { ...(await simulatorDateien()), ...(await programmDateien(ordner)) };
+        dateien = { ...(await simulatorDateien()), ...(await programmDateien(ordner)), ...onlineKonfig() };
       } catch (e) {
         this.log("Fehler beim Laden: " + e.message, "e");
         return;

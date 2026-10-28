@@ -1,5 +1,5 @@
 # =====================================================================
-#  ESP-HUB v1.0 - Spiele-Galerie fuer das BZTG espBoard
+#  ESP-HUB v1.1 - Spiele-Galerie fuer das BZTG espBoard
 # =====================================================================
 #  Statt fuer jedes Spiel main.py zu ersetzen, liegt auf dem Board nur
 #  noch dieser Hub als main.py. Jedes Spiel ist eine eigene Datei mit
@@ -11,6 +11,7 @@
 #    S5 (oder Joystick rechts / Joystick-Taster) : Spiel starten
 #  IM SPIEL
 #    S4 + S5 zusammen halten : Spiel sofort beenden, zurueck zur Galerie
+#  GALERIE, S4 : Info (Board-Nummer, ID, Online-Speicher testen)
 #  Poti RP3 (links oben)  : Lautstaerke (ganz links = stumm)
 #
 #  SANDBOX - jedes Spiel laeuft abgeschottet vom Hub:
@@ -19,6 +20,10 @@
 #    * Dateien: open() und os.* zeigen nur in /daten/<Spiel>/ -
 #      main.py, boot.py und die gal_-Dateien sind fuer Spiele unsichtbar
 #    * "import main" ist gesperrt
+#
+#  SPEICHER (hub_online.py): Spiele bekommen mit "import hub" Funktionen
+#  zum Speichern, fuer Bestenlisten und globale Werte - lokal und, wenn
+#  /hub_online.json existiert, online pro Board (eFuse-MAC). Siehe README.
 #  Schutz gegen Versehen, kein Schutz gegen absichtlich boesen Code
 #  (MicroPython kennt keine echte Prozess-Trennung).
 # =====================================================================
@@ -28,8 +33,9 @@ import sys
 import machine
 import time
 from machine import Pin
+import hub_online
 
-VERSION = "v1.0"
+VERSION = "v1.1"
 PRAEFIX = "gal_"
 START_DATEI = "/hub_start.txt"      # welches Spiel nach dem Reset laeuft
 ZULETZT_DATEI = "/hub_zuletzt.txt"  # Galerie merkt sich die Auswahl
@@ -187,19 +193,32 @@ class _Sandbox:
             m.ticks_us = ticks_us
         return m
 
-    def einrichten(self):
+    def einrichten(self, hub_api):
         z = self.zeit_modul()
         o = self.os_modul()
         gesperrt = _Modul()
+        self.vorher = {}
         for n, m in (("time", z), ("utime", z), ("os", o), ("uos", o),
-                     ("main", gesperrt), ("hub", gesperrt)):
+                     ("main", gesperrt), ("hub_online", gesperrt), ("hub", hub_api)):
+            self.vorher[n] = sys.modules.get(n)
             sys.modules[n] = m
+
+    def aufraeumen(self):
+        for n, m in self.vorher.items():
+            if m is None:
+                sys.modules.pop(n, None)
+            else:
+                sys.modules[n] = m
 
 
 def spiel_starten(name):
     datei = PRAEFIX + name + ".py"
     print("ESP-Hub: starte", datei)
     sb = _Sandbox(name)
+    speicher = hub_online.Speicher(name)
+    if speicher.konfig:
+        meldung("Online-Daten", "laden ...")
+        speicher.abgleichen()
     g = {"__name__": "__main__", "__file__": datei, "open": sb.oeffnen}
     fehler = None
     try:
@@ -213,7 +232,7 @@ def spiel_starten(name):
         except NameError:          # Firmware ohne compile()
             code = quelle
         gc.collect()
-        sb.einrichten()
+        sb.einrichten(speicher.api())
         exec(code, g)
     except ZurGalerie:
         print("ESP-Hub: S4+S5 - zurueck zur Galerie")
@@ -225,10 +244,25 @@ def spiel_starten(name):
         fehler = e
         sys.print_exception(e)
     g = code = None
+    sb.aufraeumen()
     gc.collect()
+    if speicher.konfig and speicher.offen():
+        meldung("Speichere", "online ...")
+        speicher.abgleichen()
     if fehler is not None:
         fehler_zeigen(name, fehler)
     neustart()
+
+
+def meldung(z1, z2):
+    try:
+        oled = _oled()
+        oled.fill(0)
+        oled.text(z1, 64 - 4 * len(z1), 22, 1)
+        oled.text(z2, 64 - 4 * len(z2), 34, 1)
+        oled.show()
+    except Exception:
+        pass
 
 
 def fehler_zeigen(name, e):
@@ -308,6 +342,7 @@ def galerie():
     x0 //= 16
     y0 //= 16
 
+    online = hub_online.konfig_lesen() is not None
     liste = spiele()
     zuletzt = lies(ZULETZT_DATEI)
     wahl = liste.index(zuletzt) if zuletzt in liste else 0
@@ -320,6 +355,8 @@ def galerie():
         if liste:
             z = "%d/%d" % (wahl + 1, len(liste))
             oled.text(z, 126 - 8 * len(z), 1, 0)
+        if online:
+            wolke(oled, 62, 2)
         if not liste:
             oled.text("Keine Spiele!", 12, 16, 1)
             oled.text("gal_NAME.py", 20, 30, 1)
@@ -343,7 +380,7 @@ def galerie():
             y = ZEILE_Y - 1 + (ZEILEN * ZEILE_H - h) * oben // (len(liste) - ZEILEN)
             oled.fill_rect(124, y, 3, h, 1)
         oled.hline(0, 53, 128, 1)
-        oled.text("S5 = Starten", 16, 56, 1)
+        oled.text("S5 Start S4 Info", 0, 56, 1)
         oled.show()
 
     def led_zeigen():
@@ -353,7 +390,7 @@ def galerie():
     zeichnen()
     led_zeigen()
     # erst loslassen, damit ein noch gehaltenes S4+S5 nichts ausloest
-    while s5.value() == AN or sj.value() == AN:
+    while s5.value() == AN or sj.value() == AN or s4.value() == AN:
         _zeit.sleep_ms(20)
 
     alt = 0
@@ -380,12 +417,55 @@ def galerie():
             piep(1800 if richtung < 0 else 1500)
         alt = richtung
 
+        if s4.value() == AN:
+            info(oled, s4, s5)
+            zeichnen()
         rechts = jx > TOTZONE * 2
         los = s5.value() == AN or sj.value() == AN or (rechts and not rechts_alt)
         rechts_alt = rechts
         if los and liste:
             starten(oled, liste[wahl], piep)
         _zeit.sleep_ms(15)
+
+
+def wolke(oled, x, y):
+    """Kleines Wolken-Symbol (in der hellen Kopfzeile = dunkel)."""
+    oled.fill_rect(x + 3, y, 4, 2, 0)
+    oled.fill_rect(x + 1, y + 2, 9, 3, 0)
+    oled.fill_rect(x, y + 4, 11, 3, 0)
+
+
+def info(oled, s4, s5):
+    """S4 in der Galerie: Board-ID und Online-Status, S5 testet die Verbindung."""
+    k = hub_online.konfig_lesen()
+
+    def zeichnen(status):
+        oled.fill(0)
+        oled.fill_rect(0, 0, 128, 10, 1)
+        oled.text("BOARD #%04d" % hub_online.board_nr(), 2, 1, 0)
+        oled.text("ID " + hub_online.board_id(), 0, 13, 1)
+        oled.text("Online:" + ("an" if k else "aus"), 0, 24, 1)
+        if k:
+            oled.text(k.get("wlan", "")[:16], 0, 33, 1)
+        oled.text(status[:16], 0, 43, 1)
+        oled.text("S5 Test  S4 Ende" if k else "S4 = zurueck", 0, 56, 1)
+        oled.show()
+
+    zeichnen("")
+    while s4.value() == AN:
+        _zeit.sleep_ms(20)
+    while True:
+        if s4.value() == AN:
+            while s4.value() == AN:
+                _zeit.sleep_ms(20)
+            return
+        if k and s5.value() == AN:
+            zeichnen("verbinde ...")
+            ok, text = hub_online.verbindung_testen()
+            zeichnen(text)
+            while s5.value() == AN:
+                _zeit.sleep_ms(20)
+        _zeit.sleep_ms(20)
 
 
 def starten(oled, name, piep):
