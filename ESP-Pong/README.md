@@ -14,7 +14,7 @@ Beliebig viele ESP32-Boards finden sich in einer **Lobby** und spielen paarweise
   Sie wird aus der MAC-Adresse berechnet und bleibt nach dem Neustart gleich.
   Wer mag, setzt oben in `main.py` einen eigenen `NAME`.
 - **Host-Auswahl:** Mit S16 eröffnest du ein Spiel. Die anderen sehen dich als
-  `HOST` und können mit dem Joystick-Taster beitreten. Oder du lädst ein freies
+  `HOST` und können mit **S5** (oder Joystick nach rechts) beitreten. Oder du lädst ein freies
   Board direkt ein.
 - **Mehrere Spiele gleichzeitig:** Die Boards reden nach dem Verbinden nur noch
   direkt miteinander, so stören sich mehrere Paare im selben Raum nicht.
@@ -64,11 +64,13 @@ mpremote connect COM3 cp main.py :main.py + cp ssd1306.py :ssd1306.py + reset
 | Eingabe | Funktion |
 |---|---|
 | Joystick hoch/runter | Board in der Liste auswählen |
-| Joystick-Taster auf `HOST` | Diesem Spiel beitreten |
-| Joystick-Taster auf `FREI` | Dieses Board einladen |
+| **S5** auf `HOST` | Diesem Spiel beitreten |
+| **S5** auf `FREI` | Dieses Board einladen |
 | **S16** | Selbst Host werden (Spiel eröffnen) |
 | **S4** | Abbrechen / Einladung ablehnen |
-| Einladung erhalten | Joystick-Taster = annehmen, S4 = ablehnen (nach 10 s automatisch nein) |
+| Einladung erhalten | S5 = annehmen, S4 = ablehnen (nach 10 s automatisch nein) |
+
+Statt **S5** gehen überall auch **Joystick nach rechts** oder der Joystick-Taster.
 
 Status in der Liste:
 
@@ -84,7 +86,8 @@ Status in der Liste:
 | Eingabe | Funktion |
 |---|---|
 | Joystick hoch/runter | Eigenen Schläger bewegen (Host = links, Gast = rechts) |
-| Joystick-Taster | Nach Spielende: neue Runde (sonst automatisch nach 15 s) |
+| **S5** (oder Joystick rechts) | Nach Spielende: **Revanche** (sonst automatisch nach 15 s) |
+| Poti **RP3** (links oben) | Lautstärke, ganz links = stumm |
 | **S4** | Match verlassen, zurück zur Lobby |
 
 Wer zuerst **5 Punkte** hat, gewinnt. Der Ball wird bei jedem Schlägertreffer

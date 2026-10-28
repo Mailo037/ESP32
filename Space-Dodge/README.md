@@ -25,7 +25,7 @@ Die Bestenliste legt das Spiel selbst als `bestenliste.txt` auf dem ESP an.
 | Joystick-Taster | Schutzschild (verbraucht Energie) |
 | **S5** (rechts) | Pause · im Titelbild: Bestenliste |
 | **S16** (unten) | Start / weiter · im Titelbild S4 = Steuerung |
-| Poti `RP3` (links) | Lautstärke |
+| Poti `RP3` (links) | Lautstärke, ganz links = stumm |
 | Poti `RP0` (rechts) | Schwierigkeit |
 
 | Anzeige | Bedeutung |

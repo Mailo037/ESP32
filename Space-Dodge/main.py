@@ -6,7 +6,7 @@
 # Joystick-Taster: Schutzschild (verbraucht Energie)
 # S5  (rechts)  : Pause
 # S16 (unten)   : Start / Neustart
-# Poti links    : Lautstaerke des Summers
+# Poti links    : Lautstaerke des Summers (RP3, ganz links = stumm)
 # Poti rechts   : Schwierigkeit (Gegner-Tempo und -Anzahl)
 # 8 LEDs        : Munition (1 pro Schuss, laedt von selbst nach)
 # Balken unten  : Energie fuer Schild und Bombe
@@ -152,8 +152,12 @@ ton_ende = 0
 
 def ton(freq, ms):
     global ton_ende
-    # Poti links = Lautstaerke (Piezo ist bei 50 % Tastverhaeltnis am lautesten)
-    lautstaerke = 12000 + PotiL.read_u16() // 3
+    # Poti RP3 (links oben) = Lautstaerke, ganz links = stumm.
+    # Der Piezo ist bei 50 % Tastverhaeltnis (duty 32768) am lautesten.
+    w = PotiL.read_u16()
+    lautstaerke = 0 if w < 2000 else 4000 + w * 29000 // 65535
+    if not lautstaerke:
+        return
     buzzer.freq(freq)
     buzzer.duty_u16(lautstaerke)
     ton_ende = ticks_add(ticks_ms(), ms)

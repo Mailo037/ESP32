@@ -11,7 +11,7 @@
 #      (gedrueckt halten = bei jeder Landung sofort wieder springen)
 #    S5                    : Pause
 #    S4                    : zurueck ins Menue
-#  Poti RP3 (links)        : Lautstaerke der Musik (ganz links = aus)
+#  Poti RP3 (links oben)   : Lautstaerke von Musik und Effekten (ganz links = stumm)
 #  8 LEDs                  : Fortschritt im Level
 #  RGB-LED                 : Levelfarbe, rot = Absturz
 #
@@ -384,16 +384,19 @@ musik_schritt = -1
 
 
 def lautstaerke():
-    # Poti ganz links = aus
+    """Poti RP3 (links oben) = Lautstaerke, ganz nach links = stumm.
+    Der Piezo ist bei 50 % Tastverhaeltnis (duty 32768) am lautesten."""
     w = potiL.read_u16()
-    return 0 if w < 2000 else 2000 + w // 3
+    return 0 if w < 2000 else 4000 + w * 29000 // 65535
 
 
 def effekt(freq, ms):
     global effekt_bis
     l = lautstaerke()
+    if not l:
+        return
     buzzer.freq(freq)
-    buzzer.duty_u16(max(l, 12000))
+    buzzer.duty_u16(l)
     effekt_bis = ticks_add(ticks_ms(), ms)
 
 
