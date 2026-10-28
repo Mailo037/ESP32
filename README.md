@@ -247,7 +247,7 @@ Admin, Kopplung und Limits gibt es dort nicht. Als `url` dann
 
 ## Simulator
 
-Im [Simulator](https://mailo037.github.io/ESP32-Programme/) ist „Hub“
+Im [Simulator](https://mailo037.github.io/ESP32/) ist „Hub“
 voreingestellt. Alle Ordner sind als vertrauenswürdige `gal_`-Dateien dabei. Im
 Feld *Online-Speicher* kann man die Vercel-Adresse eintragen, die Anfragen
 schickt dann der Browser.
