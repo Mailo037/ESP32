@@ -1,3 +1,6 @@
+# HUB-NAME: Space Dodge
+# HUB-VERSION: 2.1
+# HUB-INFO: Weltraum-Shooter mit Schild, Bombe und Online-Bestenliste
 # SPACE DODGE v2.0 - Spiel fuer das BZTG espBoard (MicroPython, ESP32)
 #
 # Joystick      : Raumschiff steuern (links/rechts/oben/unten)

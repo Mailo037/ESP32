@@ -1,3 +1,6 @@
+# HUB-NAME: Geometry Dash
+# HUB-VERSION: 1.1
+# HUB-INFO: Wuerfel-Springspiel mit 3 Leveln und Uebungsmodus
 # =====================================================================
 #  GEOMETRY DASH (Fan-Nachbau) fuer das BZTG espBoard
 #  MicroPython, ESP32, SSD1306 128x64

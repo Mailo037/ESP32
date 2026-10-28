@@ -8,9 +8,14 @@
 #   GET/PUT/PATCH/DELETE /<pfad>.json   (+ ?auth=...)
 #   {".sv": "timestamp"} und {".sv": {"increment": n}} werden ersetzt.
 # Alles liegt in hub_daten.json neben diesem Skript.
+#
+# App-Store: GET /apps (Katalog) und /apps/<id> (Datei). Die Apps sind die
+# Ordner dieses Repos mit main.py - wie beim Vercel-Server, nur lokal.
 # http://<PC-IP>:8080/ im Browser zeigt alle Bestenlisten.
 import argparse
+import hashlib
 import html
+import re
 import json
 import pathlib
 import threading
@@ -19,6 +24,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 DATEI = pathlib.Path(__file__).with_name("hub_daten.json")
+REPO = pathlib.Path(__file__).resolve().parents[2]
+OHNE_ORDNER = {"Hub", "simulator", "docs"}
 MAX_BODY = 16384
 sperre = threading.Lock()
 daten = {}
@@ -99,6 +106,28 @@ def setzen(t, wert):
     daten = aufraeumen(daten) or {}
 
 
+def app_id(ordner):
+    return re.sub(r"[^A-Za-z0-9]", "_", ordner)
+
+
+def katalog():
+    """{id: (Eintrag, Bytes)} aus den Repo-Ordnern."""
+    apps = {}
+    for ordner in sorted(REPO.iterdir()):
+        datei = ordner / "main.py"
+        if not ordner.is_dir() or ordner.name in OHNE_ORDNER or ordner.name.startswith(".") or not datei.exists():
+            continue
+        roh = datei.read_bytes()
+        kopf = {"name": ordner.name.replace("-", " "), "version": "", "info": ""}
+        for zeile in roh.decode("utf-8", "replace").splitlines()[:40]:
+            m = re.match(r"#\s*HUB-(NAME|VERSION|INFO):\s*(.*)", zeile.strip())
+            if m:
+                kopf[m.group(1).lower()] = m.group(2).strip()
+        i = app_id(ordner.name)
+        apps[i] = (dict(id=i, groesse=len(roh), sha256=hashlib.sha256(roh).hexdigest(), **kopf), roh)
+    return apps
+
+
 class Handler(BaseHTTPRequestHandler):
     def antwort(self, code, obj=None, text=None, typ="application/json"):
         body = (text if text is not None else json.dumps(obj)).encode("utf-8")
@@ -120,10 +149,23 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         if methode == "GET" and url.path in ("/", "/index.html"):
             return self.antwort(200, text=uebersicht(), typ="text/html")
-        if not url.path.endswith(".json"):
-            return self.antwort(404, {"error": "Pfad muss auf .json enden"})
         if auth and parse_qs(url.query).get("auth", [""])[0] != auth:
             return self.antwort(401, {"error": "Permission denied"})
+        if methode == "GET" and url.path.rstrip("/") == "/apps":
+            return self.antwort(200, {"apps": [e for e, _ in katalog().values()]})
+        if methode == "GET" and url.path.startswith("/apps/"):
+            app = katalog().get(url.path[6:])
+            if not app:
+                return self.antwort(404, {"error": "App unbekannt"})
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(app[1])))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(app[1])
+            return
+        if not url.path.endswith(".json"):
+            return self.antwort(404, {"error": "Pfad muss auf .json enden"})
         try:
             t = teile(url.path[:-5])
             body = None

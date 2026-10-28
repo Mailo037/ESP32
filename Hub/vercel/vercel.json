@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/", "destination": "/api/hub?p=" },
+    { "source": "/:pfad*", "destination": "/api/hub?p=:pfad*" }
+  ]
+}

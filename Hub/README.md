@@ -1,18 +1,18 @@
-# ESP-Hub v1.1 – Spiele-Galerie für das espBoard
+# ESP-Hub v2.0 – Spiele-Galerie mit App-Store für das espBoard
 
-Nicht mehr für jedes Spiel `main.py` austauschen: Auf dem Board liegt der
-Hub als `main.py`, die Spiele daneben als `gal_*.py`. Nach dem Einschalten
-erscheint eine Galerie, dort wählst du das Spiel aus.
+Auf dem Board liegt der Hub als `main.py`, jedes Spiel ist eine eigene Datei
+`gal_<Name>.py`. Nach dem Einschalten erscheint die Galerie. Neue Spiele
+kommen aus dem **App-Store**, aus dem **Web-Portal** oder einfach per Hochladen.
 
 ```
 ┌────────────────────────┐
-│ESP-HUB              2/4│
-│  3D Render             │
-│> ESP Pong              │
-│  Geometry Dash         │
-│  Space Dodge           │
+│ESP-HUB  ☁         1.2M │   ☁ = online eingerichtet, rechts: freier Flash
+│ ESP Pong               │
+│>Geometry Dash         ↑│   ↑ = Update verfügbar
+│ Space Dodge            │
+│ + App-Store            │
 │────────────────────────│
-│    S5 Start S4 Info    │
+│v1.1>1.2       S4 Menue │
 └────────────────────────┘
 ```
 
@@ -20,167 +20,172 @@ erscheint eine Galerie, dort wählst du das Spiel aus.
 
 | Wo | Eingabe | Funktion |
 |---|---|---|
-| Galerie | Joystick ↑/↓ oder S17/S16 | Spiel auswählen |
-| Galerie | **S5**, Joystick → oder Joystick-Taster | Spiel starten |
-| Galerie | **S4** | Info: Board-Nummer, Board-ID, Online-Speicher testen (S5) |
-| im Spiel | **S4 + S5 zusammen halten** (0,4 s) | Spiel sofort beenden, zurück zur Galerie |
+| Galerie | Joystick ↑/↓ oder S17/S16 | auswählen |
+| Galerie | **S5**, Joystick → oder Joystick-Taster | starten / öffnen |
+| Galerie | **S4** | App-Menü: Version, Größe, Daten, genutzte Dienste, Update, Spielstand löschen, Deinstallieren |
+| im Spiel | **S4 + S16 halten** | App-Menü, das Spiel pausiert: Weiter, Schließen, Spielstand löschen, Deinstallieren |
+| im Spiel | **S4 + S5 halten** | Spiel sofort beenden |
 | überall | Poti `RP3` (links) | Lautstärke, ganz links = stumm |
 
-Die LED-Reihe zeigt, welcher Eintrag gewählt ist. Die Galerie merkt sich das
-zuletzt gespielte Spiel.
+Tipp für das Menü im Spiel: erst S16, dann S4 drücken. Viele Spiele reagieren
+selbst auf S4, zum Beispiel ESP-Pong mit „zurück zur Lobby“.
+
+Das App-Menü im Spiel friert das Spiel ein und stellt danach das Bild wieder her.
+Die Zeit im Menü rechnet der Hub aus `ticks_ms()` heraus, damit das Spiel keinen
+Zeitsprung macht.
+
+Einträge am Ende der Galerie:
+
+- **+ App-Store:** alle Apps aus dem Store. `+` = neu, `^` = Update,
+  `L` = gleiche App liegt lokal, „Alle updaten“.
+- **i Board-Info:** Board-Nummer und ID, freier Flash und RAM, Konto,
+  *Jetzt abgleichen*, *Koppeln*, *Verbindung testen*.
 
 ## Installieren
-
-**Am einfachsten** (kopiert Hub und alle Spiele aus diesem Repo):
 
 ```powershell
 pip install mpremote
 python Hub/installieren.py COM3
 ```
 
-**Von Hand mit Thonny:** In den Root-Ordner des ESP speichern:
+Das kopiert den Hub (`main.py`, `hub_apps.py`, `hub_galerie.py`, `hub_online.py`,
+`ssd1306.py`) und alle Spiele aus diesem Repo als `gal_*.py` auf das Board. Die
+Spiele werden dabei als vertrauenswürdig eingetragen, siehe unten. Liegt
+`Hub/hub_online.json` da, kopiert das Skript sie mit.
 
-| Datei aus dem Repo | Name auf dem ESP |
-|---|---|
-| `Hub/main.py` | `main.py` |
-| `Hub/ssd1306.py` | `ssd1306.py` |
-| `Hub/hub_online.py` | `hub_online.py` |
-| `ESP-Pong/main.py` | `gal_ESP_Pong.py` |
-| `Space-Dodge/main.py` | `gal_Space_Dodge.py` |
-| `Geometry-Dash/main.py` | `gal_Geometry_Dash.py` |
-| `3D-Render/main.py` | `gal_3D_Render.py` |
+## Online: Vercel-Bridge + Firebase
 
-## Eigenes Spiel hinzufügen
+```
+espBoard ──https──▶ Vercel (esphub-steel.vercel.app) ──▶ Firebase Realtime Database
+   nur Board-ID + Board-Schlüssel        prüft alles          Zugangsdaten nur in Vercel
+```
 
-Datei `gal_MeinSpiel.py` auf den ESP laden, fertig. In der Galerie heißt sie
-„MeinSpiel“, aus `_` werden Leerzeichen. Das Spiel muss dafür nicht
-angepasst werden, jedes normale `main.py` funktioniert.
+Das Board spricht **nur mit Vercel**. Die Firebase-Zugangsdaten liegen
+ausschließlich in den Vercel-Umgebungsvariablen. Weder das Board noch ein
+Browser bekommt sie zu sehen, und im Repo stehen sie auch nicht. Einrichtung:
+[`vercel/README.md`](vercel/README.md).
 
-Damit **S4 + S5** wirkt, muss das Spiel ab und zu `time.ticks_ms()` oder
-`time.sleep_ms()` aufrufen. Jede Spielschleife tut das ohnehin.
+Auf dem Board in `hub_online.json` (Vorlage `hub_online.beispiel.json`):
 
-## Speichern: `import hub`
+```json
+{ "wlan": "WLAN-Name", "passwort": "WLAN-Passwort", "url": "https://esphub-steel.vercel.app", "auth": "" }
+```
 
-Spiele aus der Galerie bekommen das Modul `hub`. Außerhalb des Hubs gibt
-es das Modul nicht, deshalb so einbinden:
+`auth` ist nur nötig, wenn in Vercel `HUB_TOKEN` gesetzt ist.
+
+Die Webseite hat zwei Teile:
+
+| Adresse | Für wen | Was |
+|---|---|---|
+| `/` | alle | **Portal:** App-Galerie, Bestenlisten, Konto anlegen, *Meine Boards* (koppeln, installierte Apps, genutzte Dienste, Fern-Installation und Deinstallation), *Meine Apps* (`.py`/`.zip` hochladen: privat oder zur Prüfung) |
+| `/admin` | nur du (Passwort `ADMIN_TOKEN`) | Übersicht, alle Boards (Apps, Speicher, Konto, Original-Hub?), sperren und zurücksetzen, Apps (hochladen, ausblenden, Code ansehen), Einreichungen freigeben oder ablehnen, Konten, Speicherlimits, Regel für veränderte Hubs, Bestenlisten mit Höchstpunkten |
+
+### Board koppeln
+
+1. Im Portal ein Konto anlegen.
+2. *Meine Boards*: die Board-ID eingeben (steht am Board unter **Board-Info**)
+   und auf „Code anfordern“ klicken.
+3. Am Board: Board-Info → **Koppeln**. Das Display zeigt einen 6-stelligen Code.
+4. Den Code im Portal eingeben. Nach 5 falschen Versuchen verfällt die Anfrage,
+   nach 10 Minuten auch.
+
+Danach kannst du im Portal Apps installieren und entfernen. Das Board erledigt
+die Aufträge beim nächsten Abgleich: nach dem Einschalten, bei Spielstart oder
+-ende oder über Board-Info → *Jetzt abgleichen*.
+
+### Wann gleicht das Board ab?
+
+- **Einschalten:** anmelden, Aufträge holen und ausführen
+- **Spielstart:** Spielstände und Bestenlisten holen, App-Katalog für die Update-Anzeige
+- **Spielende** (auch nach S4+S5): Neues hochladen
+- **ohne Netz:** Alles bleibt lokal in `/hubdaten/` und wird später nachgeholt
+
+## Vertrauenswürdige und lokale Apps
+
+| | vertrauenswürdig | lokal |
+|---|---|---|
+| Herkunft | App-Store, eigenes Konto, `installieren.py` | selbst aufgespielt oder veränderte Datei |
+| erkannt an | SHA-256 der Datei passt zum Store oder zur Installation | Prüfsumme passt nicht |
+| `import hub` (Speicher, Bestenlisten) | ja | **nein**, `ImportError` |
+| Updates aus dem Store | ja | nein |
+| Online-Abgleich | ja | nein |
+
+Lokale Apps laufen ganz normal in der Sandbox, nur ohne Hub-Dienste. Ist das
+Board gekoppelt, bietet das App-Menü einer lokalen App zwei Punkte:
+
+- **In Konto laden:** Die App liegt dann privat in deinem Konto, ist sofort
+  vertrauenswürdig und auf deinen anderen Boards installierbar.
+- **Zur Prüfung:** Die App geht an den Admin. Nach der Freigabe steht sie für alle
+  im Store.
+
+## Für Spiele: `import hub`
 
 ```python
 try:
-    import hub
+    import hub          # nur in der Galerie und nur für vertrauenswürdige Apps
 except ImportError:
     hub = None
 ```
 
 | Funktion | Was sie tut |
 |---|---|
-| `hub.laden(k, standard)` / `hub.speichern(k, wert)` | Spielstand **dieses Boards** (Zahlen, Text, Listen, Dicts; max. 4 KB pro Spiel) |
-| `hub.eintragen(liste, punkte, name)` | Bestenliste, je Board zählt der beste Wert. `True` bei neuem persönlichen Rekord |
-| `hub.bestenliste(liste, n)` | `[(name, punkte, eigener), …]`, beste zuerst, über **alle Boards** |
-| `hub.global_laden(k)` / `hub.global_setzen(k, w)` | Werte, die für alle Boards gleich sind |
-| `hub.global_addieren(k, n=1)` | Zähler für alle Boards, z. B. „Spiele insgesamt“. Online wird atomar addiert, gleichzeitige Boards gehen also nicht verloren |
-| `hub.board_id()` / `hub.board_nr()` | `"246f28b01230"` / `4656`. Die Nummer ist dieselbe wie in ESP-Pong |
-| `hub.online()` | Hat der letzte Abgleich geklappt? |
-| `hub.sync()` | Sofort abgleichen. Blockiert 1–5 s und schaltet WLAN ein, also nicht mitten in einem ESP-NOW-Spiel aufrufen |
+| `hub.laden(k, standard)` / `hub.speichern(k, wert)` | Spielstand dieses Boards |
+| `hub.eintragen(liste, punkte, name)` | Bestenliste, je Board zählt der beste Wert |
+| `hub.bestenliste(liste, n)` | `[(name, punkte, eigener), …]` über alle Boards |
+| `hub.global_laden/global_setzen/global_addieren` | Werte für alle Boards; `addieren` zählt atomar hoch |
+| `hub.speicher_info()` | `(belegt, maximal)` in Bytes, das Limit legt der Admin fest |
+| `hub.board_id()` / `hub.board_nr()` | eFuse-MAC / Nummer wie in ESP-Pong |
+| `hub.online()` / `hub.sync()` | Status / sofort abgleichen (blockiert 1–5 s) |
 
-Alle Funktionen außer `sync()` arbeiten **nur lokal und sofort**, ohne
-Wartezeit im Spiel. Den Abgleich übernimmt der Hub:
+Alles außer `sync()` arbeitet lokal und sofort, der Hub gleicht vor und nach dem
+Spiel ab.
 
-- **beim Spielstart:** Daten holen, damit Bestenlisten aktuell sind („Online-Daten laden …“)
-- **beim Spielende** (auch nach S4 + S5): Neues hochladen („Speichere online …“)
-- **ohne Netz:** Alles bleibt lokal in `/hubdaten/` und wird beim nächsten
-  erfolgreichen Abgleich nachgeholt, auch für andere Spiele.
+Kopfzeilen einer App, alle optional:
 
-Schon eingebaut: **Space Dodge** zeigt nach der eigenen Bestenliste (S5 im
-Titelbild) eine zweite Seite „ONLINE“ mit allen Boards. **Geometry Dash**
-zeigt pro Level `Du 87% Top 100%`.
-
-### Pro Board: die eFuse-MAC
-
-Alles wird unter der **Board-ID** gespeichert. Das ist die MAC-Adresse, die
-ab Werk im eFuse des ESP32 eingebrannt ist (`machine.unique_id()`). Neu
-flashen, umbenennen oder Dateien löschen ändert sie nicht. Spiele können die
-ID nur lesen. Die WLAN-MAC lässt sich per Software umstellen, deshalb
-nimmt der Hub sie nicht.
-
-Grenze: Der Server kann nicht prüfen, ob eine Anfrage wirklich von diesem Board
-kommt. Wer die URL kennt, kann mit dem PC auch unter fremder ID schreiben.
-Für Klassen-Bestenlisten reicht das. Für mehr Schutz das Passwort (`auth`)
-setzen und die URL nicht weitergeben.
-
-## Online-Speicher einrichten
-
-Ohne Einrichtung speichert der Hub nur lokal. Für online gibt es zwei Wege:
-
-**A) PC im selben WLAN, ohne Konto:**
-
-```powershell
-python Hub/server/hub_server.py --auth GEHEIM
+```python
+# HUB-NAME: Mein Spiel
+# HUB-VERSION: 1.2
+# HUB-INFO: Kurze Beschreibung für Store und Galerie
 ```
 
-`http://<IP des PCs>:8080/` im Browser zeigt dann alle Bestenlisten.
-Die Daten liegen in `Hub/server/hub_daten.json`.
+## Sicherheit
 
-**B) Firebase Realtime Database (kostenlos, im Internet):**
+**Was das System verhindert:**
 
-1. Auf [console.firebase.google.com](https://console.firebase.google.com) ein
-   Projekt anlegen und *Realtime Database* erstellen.
-2. Unter *Regeln* den Inhalt von [`server/firebase-regeln.json`](server/firebase-regeln.json)
-   einfügen. Die Regeln lassen nur gültige Board-IDs und Bestenlisten-Einträge zu.
-3. Die Datenbank-URL notieren (`https://….firebasedatabase.app`).
+- **Sandbox:** Ein Spiel sieht nur `/daten/<Spiel>/`. `main.py`, die Hub-Module,
+  `hub_online.json` (WLAN-Passwort) und `/hubdaten/` (Board-Schlüssel) sind
+  für Spiele unerreichbar. Ein Spiel kann den Hub also nicht verändern.
+- **Board-Schlüssel:** Bei der ersten Anmeldung vergibt der Server einen
+  geheimen Schlüssel, nur dieses Board kennt ihn. Danach weist der Server jede
+  Anfrage unter dieser Board-ID ohne den Schlüssel ab. Fremde können also nicht
+  unter deiner ID speichern, und der Kopplungscode erscheint nur auf dem echten Board.
+- **Server prüft alles selbst:** nur die eigene ID, Speicherlimits pro App und
+  Board, Größen, erlaubte Pfade, Höchstpunkte pro Bestenliste. Gesperrte Boards
+  und Konten bekommen nichts mehr.
+- **Veränderter Hub:** Das Board meldet SHA-256-Prüfsummen seiner Hub-Dateien.
+  Der Server vergleicht sie mit dem Original aus GitHub. Im Admin legst du fest,
+  was mit veränderten Hubs passiert: *erlauben* (nur markieren), *nur lesen* oder
+  *sperren*.
 
-Danach `Hub/hub_online.beispiel.json` nach `Hub/hub_online.json` kopieren
-und WLAN, Passwort und URL eintragen. `installieren.py` kopiert die Datei mit
-aufs Board. Von Hand: als `hub_online.json` in den Root-Ordner speichern.
-`hub_online.json` ist in `.gitignore`, das WLAN-Passwort landet also nicht auf
-GitHub. Ein Spiel kann die Datei nicht lesen (Sandbox).
+**Ehrliche Grenze:** Wer ein Board in der Hand hat, kann darauf alles ändern.
+Bei MicroPython sind alle Dateien lesbar und überschreibbar. Ein gezielt
+umgebauter Hub kann richtige Prüfsummen vortäuschen und mit seinem eigenen
+Schlüssel im Rahmen der Regeln schreiben, zum Beispiel einen Fantasie-Rekord
+unterhalb der Höchstpunkte. Dagegen helfen nur Höchstpunkte, Sperren und das
+Löschen einzelner Einträge im Admin. Einen echten Schutz gäbe es nur mit Secure
+Boot und Flash-Verschlüsselung des ESP32 und einem fest in die Firmware
+eingebauten Hub. Das ist aufwändig und hier nicht umgesetzt.
 
-In der Galerie zeigt eine kleine **Wolke** in der Kopfzeile, dass der
-Online-Speicher eingerichtet ist. **S4** öffnet die Info-Seite, dort testet
-**S5** die Verbindung.
+## Eigener Server statt Vercel (ohne Konto)
 
-Im **Simulator** gibt es dafür das Feld *Online-Speicher*. Das WLAN „steht“
-dort immer, die Anfragen schickt der Browser. Die Seite läuft über https,
-deshalb geht dort nur eine https-Adresse (Firebase). Den PC-Server erreicht
-der Browser nur, wenn der Simulator selbst über http läuft.
+`python Hub/server/hub_server.py --auth GEHEIM` speichert alles in einer
+JSON-Datei auf dem PC und hat einen App-Store aus den Repo-Ordnern. Portal,
+Admin, Kopplung und Limits gibt es dort nicht. Als `url` dann
+`http://<PC-IP>:8080` eintragen.
 
-## Sandbox
+## Simulator
 
-Jedes Spiel läuft abgeschottet vom Hub:
-
-- **Frischer Interpreter:** Vor und nach jedem Spiel macht der Hub einen
-  Soft-Reset. Kein Spiel erbt Speicher, Pins oder ESP-NOW-Zustand vom
-  vorigen, und große Spiele bekommen den ganzen RAM.
-- **Eigener Namensraum:** Das Spiel sieht keine Variablen oder Funktionen des Hubs.
-  `import main` und `import hub_online` sind gesperrt. Ein Spiel bekommt nur `import hub`.
-- **Eigener Ordner:** `open()` und `os.listdir/remove/rename/…` zeigen nur in
-  `/daten/<Spiel>/`. `main.py`, `boot.py` und die `gal_`-Dateien kann ein Spiel
-  weder lesen noch löschen, und `..` ist verboten. Bestenlisten und Rekorde
-  liegen deshalb z. B. in `/daten/Space_Dodge/bestenliste.txt`.
-- **Beenden klappt immer:** S4 + S5 löst eine Ausnahme aus, die nicht von
-  `Exception` erbt. Ein `except Exception:` im Spiel fängt sie also nicht ab.
-  Verschluckt ein Spiel sie trotzdem mit einem nackten `except:`, startet der
-  Hub nach 1 s das ganze Board neu.
-- **Absturz:** Die Fehlermeldung erscheint auf dem OLED, mit **S5** geht es
-  zurück zur Galerie.
-
-Das ist ein Schutz gegen Versehen, keine echte Sicherheitsgrenze.
-MicroPython kennt keine getrennten Prozesse, und ein absichtlich böses Programm
-käme über Umwege (z. B. `import vfs`) trotzdem an den Flash.
-
-## So funktioniert es
-
-1. Die Galerie schreibt den Namen des Spiels in `hub_start.txt` und macht
-   einen Soft-Reset.
-2. `main.py` startet neu, findet `hub_start.txt` und löscht die Datei sofort.
-   Bei einem Absturz landet man so wieder in der Galerie, nicht in einer
-   Endlosschleife.
-3. Der Hub ersetzt `time`, `os` und `open` durch die Sandbox-Versionen und
-   führt `gal_<Spiel>.py` in einem leeren Namensraum aus.
-4. Spielende, S4 + S5 oder Fehler: Soft-Reset, und die Galerie erscheint.
-
-Im [Simulator](https://mailo037.github.io/ESP32-Programme/) ist „Hub“ jetzt
-voreingestellt. Er packt automatisch alle Ordner als `gal_`-Dateien dazu.
-
-## Hardware
-
-Siehe [`docs/espBoard.md`](../docs/espBoard.md).
+Im [Simulator](https://mailo037.github.io/ESP32-Programme/) ist „Hub“
+voreingestellt. Alle Ordner sind als vertrauenswürdige `gal_`-Dateien dabei. Im
+Feld *Online-Speicher* kann man die Vercel-Adresse eintragen, die Anfragen
+schickt dann der Browser.

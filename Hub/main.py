@@ -1,31 +1,28 @@
 # =====================================================================
-#  ESP-HUB v1.1 - Spiele-Galerie fuer das BZTG espBoard
+#  ESP-HUB v2.0 - Spiele-Galerie mit App-Store fuer das BZTG espBoard
 # =====================================================================
-#  Statt fuer jedes Spiel main.py zu ersetzen, liegt auf dem Board nur
-#  noch dieser Hub als main.py. Jedes Spiel ist eine eigene Datei mit
-#  dem Praefix "gal_", z. B.  gal_ESP_Pong.py  ->  "ESP Pong".
-#  Neues Spiel = neue gal_-Datei hochladen, fertig.
+#  Auf dem Board liegt nur dieser Hub als main.py. Jedes Spiel ist eine
+#  eigene Datei "gal_<Name>.py" - neue Spiele kommen per Hochladen oder
+#  aus dem App-Store dazu.
 #
-#  GALERIE
-#    Joystick hoch/runter (oder S17/S16) : Spiel auswaehlen
-#    S5 (oder Joystick rechts / Joystick-Taster) : Spiel starten
+#  GALERIE (hub_galerie.py)
+#    Joystick hoch/runter (oder S17/S16) : auswaehlen
+#    S5 (oder Joystick rechts / Joystick-Taster) : starten / oeffnen
+#    S4 : App-Menue (Version, Speicher, Update, loeschen, deinstallieren)
 #  IM SPIEL
-#    S4 + S5 zusammen halten : Spiel sofort beenden, zurueck zur Galerie
-#  GALERIE, S4 : Info (Board-Nummer, ID, Online-Speicher testen)
+#    S4 + S16 halten : App-Menue (Spiel pausiert)
+#    S4 + S5  halten : Spiel sofort beenden, zurueck zur Galerie
 #  Poti RP3 (links oben)  : Lautstaerke (ganz links = stumm)
 #
 #  SANDBOX - jedes Spiel laeuft abgeschottet vom Hub:
 #    * frischer Interpreter (Soft-Reset vor und nach jedem Spiel)
 #    * eigener Namensraum: das Spiel sieht keine Variablen des Hubs
-#    * Dateien: open() und os.* zeigen nur in /daten/<Spiel>/ -
-#      main.py, boot.py und die gal_-Dateien sind fuer Spiele unsichtbar
-#    * "import main" ist gesperrt
-#
-#  SPEICHER (hub_online.py): Spiele bekommen mit "import hub" Funktionen
-#  zum Speichern, fuer Bestenlisten und globale Werte - lokal und, wenn
-#  /hub_online.json existiert, online pro Board (eFuse-MAC). Siehe README.
+#    * Dateien: open() und os.* zeigen nur in /daten/<Spiel>/
+#    * die Hub-Module sind gesperrt, Spiele bekommen nur "import hub"
 #  Schutz gegen Versehen, kein Schutz gegen absichtlich boesen Code
 #  (MicroPython kennt keine echte Prozess-Trennung).
+#
+#  Dateien: main.py, hub_apps.py, hub_galerie.py, hub_online.py, ssd1306.py
 # =====================================================================
 import gc
 import os
@@ -33,16 +30,13 @@ import sys
 import machine
 import time
 from machine import Pin
+import hub_apps
 import hub_online
 
-VERSION = "v1.1"
-PRAEFIX = "gal_"
+VERSION = hub_apps.HUB_VERSION
 START_DATEI = "/hub_start.txt"      # welches Spiel nach dem Reset laeuft
-ZULETZT_DATEI = "/hub_zuletzt.txt"  # Galerie merkt sich die Auswahl
-DATEN_ORDNER = "/daten"
-ZURUECK_HALTEN_MS = 400             # so lange S4 + S5 halten
-TASTEN_AKTIV_HIGH = True            # Taster liefern gedrueckt 3,3 V
-AN = 1 if TASTEN_AKTIV_HIGH else 0
+HALTEN_MS = 400                     # so lange S4+S5 / S4+S16 halten
+AN = hub_apps.AN
 
 _open = open
 _os = os
@@ -54,25 +48,17 @@ def neustart():
     getattr(machine, "soft_reset", machine.reset)()
 
 
-def spiele():
-    namen = []
-    for d in os.listdir("/"):
-        if d.startswith(PRAEFIX) and d.endswith(".py"):
-            namen.append(d[len(PRAEFIX):-3])
-    namen.sort()
-    return namen
-
-
-def anzeigename(name):
-    return name.replace("_", " ")
-
-
 def lies(datei):
     try:
         with open(datei) as f:
             return f.read().strip()
     except OSError:
         return ""
+
+
+def schreibe(datei, text):
+    with open(datei, "w") as f:
+        f.write(text)
 
 
 def ordner_anlegen(pfad):
@@ -89,7 +75,7 @@ def ordner_anlegen(pfad):
 #  SANDBOX
 # =====================================================================
 class ZurGalerie(BaseException):
-    """S4 + S5 gehalten. Erbt nicht von Exception, damit ein
+    """Spiel beenden. Erbt nicht von Exception, damit ein
     "except Exception:" im Spiel sie nicht verschluckt."""
 
 
@@ -98,14 +84,20 @@ class _Modul:
 
 
 class _Sandbox:
-    def __init__(self, name):
-        self.basis = DATEN_ORDNER + "/" + name
+    def __init__(self, name, speicher):
+        self.name = name
+        self.speicher = speicher
+        self.basis = hub_apps.DATEN + "/" + name
         ordner_anlegen(self.basis)
-        self.s4 = Pin(4, Pin.IN)
-        self.s5 = Pin(5, Pin.IN)
+        self.s4, self.s5, self.s16 = Pin(4, Pin.IN), Pin(5, Pin.IN), Pin(16, Pin.IN)
         self.naechst = _zeit.ticks_ms()
         self.seit = None
+        self.combo = None
         self.abbruch = 0
+        self.aktion = None          # nach dem Spiel: "ende" / "daten" / "deinstall"
+        self.pause_ms = 0           # Zeit im Menue - wird dem Spiel verschwiegen
+        self.oled = None            # das Display-Objekt des Spiels
+        self.module_vorher = set()
 
     # ---- Dateien: alles landet in /daten/<Spiel>/ -------------------
     def pfad(self, p):
@@ -135,7 +127,7 @@ class _Sandbox:
                 setattr(m, n, getattr(_os, n))
         return m
 
-    # ---- S4 + S5 beendet das Spiel -----------------------------------
+    # ---- Tastenkombinationen -----------------------------------------
     # Alle Spiele fragen pro Bild die Zeit ab. Deshalb steckt die
     # Pruefung in ticks_ms/sleep_ms - hoechstens alle 40 ms ein Blick
     # auf die Taster, das kostet praktisch keine Rechenzeit.
@@ -150,14 +142,82 @@ class _Sandbox:
         if _zeit.ticks_diff(t, self.naechst) < 0:
             return
         self.naechst = _zeit.ticks_add(t, 40)
-        if self.s4.value() == AN and self.s5.value() == AN:
-            if self.seit is None:
-                self.seit = t
-            elif _zeit.ticks_diff(t, self.seit) >= ZURUECK_HALTEN_MS:
-                self.abbruch = t or 1
-                raise ZurGalerie()
+        combo = None
+        if self.s4.value() == AN:
+            if self.s5.value() == AN:
+                combo = "ende"
+            elif self.s16.value() == AN:
+                combo = "menue"
+        if combo is None or combo != self.combo:
+            self.combo, self.seit = combo, t
+            return
+        if _zeit.ticks_diff(t, self.seit) < HALTEN_MS:
+            return
+        self.combo = None
+        if combo == "menue":
+            self.menue()
+            if self.aktion is None:
+                return
+        self.abbruch = _zeit.ticks_ms() or 1
+        raise ZurGalerie()
+
+    def menue(self):
+        """App-Menue mitten im Spiel. Das Spiel steht still; danach wird
+        sein Bild wiederhergestellt und die Pause aus der Zeit gerechnet."""
+        start = _zeit.ticks_ms()
+        try:
+            from machine import PWM
+            PWM(Pin(15)).duty_u16(0)            # Summer still
+        except Exception:
+            pass
+        oled = self.oled
+        bild = inv = None
+        if oled is not None:
+            bild = bytes(oled.buffer)
+            inv = getattr(oled, "invertiert", None)
+            try:
+                oled.invert(0)
+            except Exception:
+                pass
         else:
-            self.seit = None
+            oled = hub_apps.oled_neu()
+        ein = hub_apps.Eingabe()
+        k = hub_apps.kopf(self.name)
+        zeilen = hub_apps.info_zeilen(self.name, k, self.nutzung(), lokal="hub" not in sys.modules)
+        while True:
+            w = hub_apps.menue(oled, ein, k["name"], zeilen,
+                               ["Weiter", "Schliessen", "Daten loeschen", "Deinstallieren"])
+            if w in (-1, 0):
+                break
+            if w == 1:
+                self.aktion = "ende"
+                break
+            if w == 2 and hub_apps.frage(oled, ein, "SPIELSTAND", "Deinen Spiel-", "stand loeschen?"):
+                self.aktion = "daten"
+                break
+            if w == 3 and hub_apps.frage(oled, ein, "DEINSTALLIEREN", k["name"], "entfernen?"):
+                self.aktion = "deinstall"
+                break
+        if self.aktion is None and bild is not None:
+            oled.buffer[:] = bild
+            if inv is not None and inv >= 0:
+                oled.invertiert = -1
+                oled.invert(inv)
+            oled.show()
+        ein.warte_los()
+        self.pause_ms += _zeit.ticks_diff(_zeit.ticks_ms(), start)
+
+    def nutzung(self):
+        # Eingebaute Module (espnow, socket) stehen auf dem ESP32 nicht in
+        # sys.modules - Funk erkennt man daran, dass das WLAN-Modul an ist
+        # (der Hub schaltet es vor dem Spiel aus)
+        try:
+            import network
+            funk = network.WLAN(network.STA_IF).active() or network.WLAN(network.AP_IF).active()
+        except Exception:
+            funk = False
+        web = any(n in sys.modules and n not in self.module_vorher for n in ("requests", "urequests"))
+        return {"hub": self.speicher.benutzt, "funk": bool(funk), "web": web}
 
     def zeit_modul(self):
         m = _Modul()
@@ -165,16 +225,18 @@ class _Sandbox:
             if not n.startswith("__"):
                 setattr(m, n, getattr(_zeit, n))
         w = self.wache
+        sb = self
         tms = _zeit.ticks_ms
         tus = getattr(_zeit, "ticks_us", None)
         sms = _zeit.sleep_ms
+        tadd = _zeit.ticks_add
 
         def ticks_ms():
             w()
-            return tms()
+            return tadd(tms(), -sb.pause_ms)
 
         def sleep_ms(ms):
-            # lange Pausen in Haeppchen, damit S4 + S5 sofort wirkt
+            # lange Pausen in Haeppchen, damit die Tasten sofort wirken
             while ms > 50:
                 w()
                 sms(50)
@@ -189,19 +251,39 @@ class _Sandbox:
         if tus:
             def ticks_us():
                 w()
-                return tus()
+                return tadd(tus(), -sb.pause_ms * 1000)
             m.ticks_us = ticks_us
         return m
 
+    def display_merken(self):
+        """Das Display-Objekt des Spiels merken (fuer das App-Menue)."""
+        try:
+            import ssd1306
+        except ImportError:
+            return
+        sb = self
+        alt = ssd1306.SSD1306.__init__
+
+        def init(o, *a, **k):
+            sb.oled = o
+            alt(o, *a, **k)
+        ssd1306.SSD1306.__init__ = init
+
     def einrichten(self, hub_api):
+        self.module_vorher = set(sys.modules)     # was das Spiel selbst laedt, zaehlt
+        self.display_merken()
         z = self.zeit_modul()
         o = self.os_modul()
         gesperrt = _Modul()
         self.vorher = {}
-        for n, m in (("time", z), ("utime", z), ("os", o), ("uos", o),
-                     ("main", gesperrt), ("hub_online", gesperrt), ("hub", hub_api)):
+        for n, m in (("time", z), ("utime", z), ("os", o), ("uos", o), ("hub", hub_api),
+                     ("main", gesperrt), ("hub_online", gesperrt), ("hub_apps", gesperrt),
+                     ("hub_galerie", gesperrt)):
             self.vorher[n] = sys.modules.get(n)
-            sys.modules[n] = m
+            if m is None:
+                sys.modules.pop(n, None)    # lokale App: "import hub" schlaegt fehl
+            else:
+                sys.modules[n] = m
 
     def aufraeumen(self):
         for n, m in self.vorher.items():
@@ -212,10 +294,16 @@ class _Sandbox:
 
 
 def spiel_starten(name):
-    datei = PRAEFIX + name + ".py"
+    datei = hub_apps.datei(name)
     print("ESP-Hub: starte", datei)
-    sb = _Sandbox(name)
+    # Nur Apps aus Store, Konto oder Repo (Pruefsumme passt) bekommen
+    # Hub-Dienste. Selbst aufgespielte/veraenderte Apps laufen "lokal".
+    vertraut = hub_apps.vertraut(name)
     speicher = hub_online.Speicher(name)
+    sb = _Sandbox(name, speicher)
+    if not vertraut:
+        print("ESP-Hub: lokale App - ohne Hub-Dienste")
+        speicher.konfig = None
     if speicher.konfig:
         meldung("Online-Daten", "laden ...")
         speicher.abgleichen()
@@ -224,18 +312,18 @@ def spiel_starten(name):
     try:
         # Datei in einem Stueck lesen (kein Nachwachsen des Puffers) und
         # den Quelltext vor dem Start freigeben - spart RAM bei grossen Spielen
-        with _open("/" + datei) as f:
-            quelle = f.read(_os.stat("/" + datei)[6])
+        with _open(datei) as f:
+            quelle = f.read(_os.stat(datei)[6])
         try:
             code = compile(quelle, datei, "exec")
             quelle = None
         except NameError:          # Firmware ohne compile()
             code = quelle
         gc.collect()
-        sb.einrichten(speicher.api())
+        sb.einrichten(speicher.api() if vertraut else None)
         exec(code, g)
     except ZurGalerie:
-        print("ESP-Hub: S4+S5 - zurueck zur Galerie")
+        print("ESP-Hub: zurueck zur Galerie")
     except SystemExit:
         pass
     except KeyboardInterrupt:
@@ -243,9 +331,16 @@ def spiel_starten(name):
     except BaseException as e:
         fehler = e
         sys.print_exception(e)
+    nutzung = sb.nutzung()
     g = code = None
     sb.aufraeumen()
     gc.collect()
+    hub_apps.nutzung_merken(name, nutzung)
+    if sb.aktion == "daten":
+        hub_apps.daten_loeschen(name, speicher)
+        schreibe(START_DATEI, name)          # Spiel frisch neu starten
+    elif sb.aktion == "deinstall":
+        hub_apps.app_loeschen(name)
     if speicher.konfig and speicher.offen():
         meldung("Speichere", "online ...")
         speicher.abgleichen()
@@ -256,11 +351,7 @@ def spiel_starten(name):
 
 def meldung(z1, z2):
     try:
-        oled = _oled()
-        oled.fill(0)
-        oled.text(z1, 64 - 4 * len(z1), 22, 1)
-        oled.text(z2, 64 - 4 * len(z2), 34, 1)
-        oled.show()
+        hub_apps.meldung(hub_apps.oled_neu(), z1, z2)
     except Exception:
         pass
 
@@ -268,11 +359,9 @@ def meldung(z1, z2):
 def fehler_zeigen(name, e):
     """Absturz anzeigen, mit S5 zurueck zur Galerie."""
     try:
-        oled = _oled()
-        oled.fill(0)
-        oled.fill_rect(0, 0, 128, 10, 1)
-        oled.text("FEHLER", 40, 1, 0)
-        oled.text(anzeigename(name)[:16], 0, 13, 1)
+        oled = hub_apps.oled_neu()
+        hub_apps.kopfzeile(oled, "FEHLER")
+        oled.text(hub_apps.anzeigename(name)[:16], 0, 13, 1)
         text = "%s: %s" % (type(e).__name__, e)
         for i in range(3):
             oled.text(text[i * 16:(i + 1) * 16], 0, 25 + i * 9, 1)
@@ -287,207 +376,6 @@ def fehler_zeigen(name, e):
         _zeit.sleep_ms(20)
 
 
-def _oled():
-    from machine import I2C
-    from ssd1306 import SSD1306_I2C
-    i2c = I2C(0, scl=Pin(22), sda=Pin(21), freq=400000)
-    return SSD1306_I2C(128, 64, i2c)
-
-
-# =====================================================================
-#  GALERIE
-# =====================================================================
-LED_PINS = (13, 12, 14, 27, 26, 25, 33, 32)   # P7 ... P0
-ZEILEN = 4
-ZEILE_Y = 12
-ZEILE_H = 10
-TOTZONE = 9000
-
-
-def galerie():
-    from machine import ADC, PWM
-    for p in LED_PINS + (19, 23, 18):
-        Pin(p, Pin.OUT, value=0)
-    try:
-        summer = PWM(Pin(15), freq=2000, duty_u16=0)
-    except Exception:
-        summer = None
-    poti = ADC(Pin(39))
-    joy_x = ADC(Pin(34))
-    joy_y = ADC(Pin(35))
-    for a in (poti, joy_x, joy_y):
-        try:
-            a.atten(ADC.ATTN_11DB)
-        except Exception:
-            pass
-    s17, s16 = Pin(17, Pin.IN), Pin(16, Pin.IN)
-    s5, s4, sj = Pin(5, Pin.IN), Pin(4, Pin.IN), Pin(2, Pin.IN)
-    oled = _oled()
-
-    def piep(f, ms=18):
-        w = poti.read_u16()
-        if summer is None or w < 2000:
-            return
-        summer.freq(f)
-        summer.duty_u16(4000 + w * 29000 // 65535)
-        _zeit.sleep_ms(ms)
-        summer.duty_u16(0)
-
-    # Joystick-Mitte messen (loslassen beim Einschalten)
-    x0 = y0 = 0
-    for _ in range(16):
-        x0 += joy_x.read_u16()
-        y0 += joy_y.read_u16()
-        _zeit.sleep_ms(3)
-    x0 //= 16
-    y0 //= 16
-
-    online = hub_online.konfig_lesen() is not None
-    liste = spiele()
-    zuletzt = lies(ZULETZT_DATEI)
-    wahl = liste.index(zuletzt) if zuletzt in liste else 0
-    oben = 0
-
-    def zeichnen():
-        oled.fill(0)
-        oled.fill_rect(0, 0, 128, 10, 1)
-        oled.text("ESP-HUB", 2, 1, 0)
-        if liste:
-            z = "%d/%d" % (wahl + 1, len(liste))
-            oled.text(z, 126 - 8 * len(z), 1, 0)
-        if online:
-            wolke(oled, 62, 2)
-        if not liste:
-            oled.text("Keine Spiele!", 12, 16, 1)
-            oled.text("gal_NAME.py", 20, 30, 1)
-            oled.text("hochladen", 28, 40, 1)
-            oled.show()
-            return
-        for i in range(ZEILEN):
-            n = oben + i
-            if n >= len(liste):
-                break
-            y = ZEILE_Y + i * ZEILE_H
-            text = anzeigename(liste[n])[:14]
-            if n == wahl:
-                oled.fill_rect(0, y - 1, 120, ZEILE_H, 1)
-                oled.text(">" + text, 1, y, 0)
-            else:
-                oled.text(" " + text, 1, y, 1)
-        # Scrollbalken
-        if len(liste) > ZEILEN:
-            h = max(4, ZEILEN * ZEILE_H * ZEILEN // len(liste))
-            y = ZEILE_Y - 1 + (ZEILEN * ZEILE_H - h) * oben // (len(liste) - ZEILEN)
-            oled.fill_rect(124, y, 3, h, 1)
-        oled.hline(0, 53, 128, 1)
-        oled.text("S5 Start S4 Info", 0, 56, 1)
-        oled.show()
-
-    def led_zeigen():
-        for i, p in enumerate(LED_PINS):
-            Pin(p).value(1 if liste and i == wahl % 8 else 0)
-
-    zeichnen()
-    led_zeigen()
-    # erst loslassen, damit ein noch gehaltenes S4+S5 nichts ausloest
-    while s5.value() == AN or sj.value() == AN or s4.value() == AN:
-        _zeit.sleep_ms(20)
-
-    alt = 0
-    naechste_wdh = 0
-    rechts_alt = True
-    while True:
-        jy = joy_y.read_u16() - y0
-        jx = joy_x.read_u16() - x0
-        richtung = 0
-        if jy > TOTZONE or s17.value() == AN:
-            richtung = -1
-        elif jy < -TOTZONE or s16.value() == AN:
-            richtung = 1
-        jetzt = _zeit.ticks_ms()
-        if richtung and liste and (richtung != alt or _zeit.ticks_diff(jetzt, naechste_wdh) >= 0):
-            naechste_wdh = _zeit.ticks_add(jetzt, 380 if richtung != alt else 150)
-            wahl = (wahl + richtung) % len(liste)
-            if wahl < oben:
-                oben = wahl
-            elif wahl >= oben + ZEILEN:
-                oben = wahl - ZEILEN + 1
-            zeichnen()
-            led_zeigen()
-            piep(1800 if richtung < 0 else 1500)
-        alt = richtung
-
-        if s4.value() == AN:
-            info(oled, s4, s5)
-            zeichnen()
-        rechts = jx > TOTZONE * 2
-        los = s5.value() == AN or sj.value() == AN or (rechts and not rechts_alt)
-        rechts_alt = rechts
-        if los and liste:
-            starten(oled, liste[wahl], piep)
-        _zeit.sleep_ms(15)
-
-
-def wolke(oled, x, y):
-    """Kleines Wolken-Symbol (in der hellen Kopfzeile = dunkel)."""
-    oled.fill_rect(x + 3, y, 4, 2, 0)
-    oled.fill_rect(x + 1, y + 2, 9, 3, 0)
-    oled.fill_rect(x, y + 4, 11, 3, 0)
-
-
-def info(oled, s4, s5):
-    """S4 in der Galerie: Board-ID und Online-Status, S5 testet die Verbindung."""
-    k = hub_online.konfig_lesen()
-
-    def zeichnen(status):
-        oled.fill(0)
-        oled.fill_rect(0, 0, 128, 10, 1)
-        oled.text("BOARD #%04d" % hub_online.board_nr(), 2, 1, 0)
-        oled.text("ID " + hub_online.board_id(), 0, 13, 1)
-        oled.text("Online:" + ("an" if k else "aus"), 0, 24, 1)
-        if k:
-            oled.text(k.get("wlan", "")[:16], 0, 33, 1)
-        oled.text(status[:16], 0, 43, 1)
-        oled.text("S5 Test  S4 Ende" if k else "S4 = zurueck", 0, 56, 1)
-        oled.show()
-
-    zeichnen("")
-    while s4.value() == AN:
-        _zeit.sleep_ms(20)
-    while True:
-        if s4.value() == AN:
-            while s4.value() == AN:
-                _zeit.sleep_ms(20)
-            return
-        if k and s5.value() == AN:
-            zeichnen("verbinde ...")
-            ok, text = hub_online.verbindung_testen()
-            zeichnen(text)
-            while s5.value() == AN:
-                _zeit.sleep_ms(20)
-        _zeit.sleep_ms(20)
-
-
-def starten(oled, name, piep):
-    oled.fill(0)
-    oled.text("Starte", 40, 2, 1)
-    t = anzeigename(name)[:16]
-    oled.text(t, 64 - 4 * len(t), 14, 1)
-    oled.hline(0, 26, 128, 1)
-    oled.text("Zurueck zur", 20, 32, 1)
-    oled.text("Galerie:", 32, 42, 1)
-    oled.text("S4+S5 halten", 16, 54, 1)
-    oled.show()
-    piep(1300, 40)
-    piep(2000, 60)
-    with open(START_DATEI, "w") as f:
-        f.write(name)
-    with open(ZULETZT_DATEI, "w") as f:
-        f.write(name)
-    _zeit.sleep_ms(1200)
-    neustart()
-
-
 # =====================================================================
 #  START
 # =====================================================================
@@ -500,10 +388,11 @@ def main():
             os.remove(START_DATEI)
         except OSError:
             pass
-        if name in spiele():
+        if name in hub_apps.apps():
             spiel_starten(name)
             return
-    galerie()
+    import hub_galerie
+    hub_galerie.galerie(START_DATEI, neustart)
 
 
 main()

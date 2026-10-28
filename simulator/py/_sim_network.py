@@ -15,25 +15,26 @@ class WLAN:
     PM_PERFORMANCE = 1
     PM_POWERSAVE = 2
 
+    # Wie am ESP32: alle WLAN(STA_IF)-Objekte teilen sich einen Zustand
+    _zustand = {}
+
     def __init__(self, interface=STA_IF):
-        self._an = False
-        self._kanal = 1
-        self._verbunden = False
+        self._z = WLAN._zustand.setdefault(interface, {"an": False, "kanal": 1, "verbunden": False})
 
     def active(self, a=None):
         if a is None:
-            return self._an
-        self._an = bool(a)
+            return self._z["an"]
+        self._z["an"] = bool(a)
 
     def connect(self, ssid=None, *a, **k):
         # Jedes WLAN "klappt" - ins Internet geht es ueber den Browser
-        self._verbunden = self._an
+        self._z["verbunden"] = self._z["an"]
 
     def disconnect(self):
-        self._verbunden = False
+        self._z["verbunden"] = False
 
     def isconnected(self):
-        return self._verbunden and self._an
+        return self._z["verbunden"] and self._z["an"]
 
     def status(self, *a):
         return 1010 if self.isconnected() else 0
@@ -48,10 +49,10 @@ class WLAN:
 
     def config(self, *a, **k):
         if "channel" in k:
-            self._kanal = k["channel"]
+            self._z["kanal"] = k["channel"]
         if a:
             if a[0] == "mac":
                 return _mac()
             if a[0] == "channel":
-                return self._kanal
+                return self._z["kanal"]
             return 0

@@ -126,10 +126,17 @@ async function programmDateien(ordner) {
     // Galerie: jedes andere Programm kommt als gal_<Ordner>.py dazu
     // (wie Hub/installieren.py es auf dem echten Board macht)
     const spiele = quelle.ordner.filter((o) => o !== HUB);
+    const vertraut = {};
     await Promise.all(spiele.map(async (o) => {
       const e = quelle.baum.find((x) => x.path === o + "/main.py");
-      dateien["gal_" + o.replace(/[^A-Za-z0-9]/g, "_") + ".py"] = await ladeDatei(e);
+      const id = o.replace(/[^A-Za-z0-9]/g, "_");
+      const text = await ladeDatei(e);
+      dateien["gal_" + id + ".py"] = text;
+      // Spiele aus dem Repo gelten als vertrauenswuerdig (Hub-Dienste)
+      const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+      vertraut[id] = [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0")).join("");
     }));
+    dateien["hubdaten/_installiert.json"] = JSON.stringify(vertraut);
   }
   return dateien;
 }

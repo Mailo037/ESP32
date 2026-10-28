@@ -10,6 +10,8 @@
 # kommen ebenfalls als gal_<Name>.py dazu. Liegt Hub/hub_online.json da
 # (Vorlage: hub_online.beispiel.json), wird sie mitkopiert und der Hub
 # speichert online. Thonny vorher schliessen.
+import hashlib
+import json
 import pathlib
 import re
 import subprocess
@@ -29,13 +31,16 @@ def main():
     args = sys.argv[1:]
     port = args.pop(0) if args and not args[0].endswith(".py") else "auto"
 
-    kopien = [(HUB / "main.py", "main.py"), (HUB / "ssd1306.py", "ssd1306.py"),
-              (HUB / "hub_online.py", "hub_online.py")]
+    kopien = [(HUB / n, n) for n in ("main.py", "hub_apps.py", "hub_galerie.py", "hub_online.py", "ssd1306.py")]
     if (HUB / "hub_online.json").exists():          # Online-Speicher (nicht im Repo)
         kopien.append((HUB / "hub_online.json", "hub_online.json"))
     for ordner in sorted(REPO.iterdir()):
         if ordner.is_dir() and ordner.name not in OHNE and (ordner / "main.py").exists():
             kopien.append((ordner / "main.py", gal_name(ordner.name) + ".py"))
+    # Spiele aus diesem Repo gelten als vertrauenswuerdig (Hub-Dienste,
+    # Updates). Eigene Dateien hinter dem Port laufen als "lokal".
+    vertraut = {ziel[4:-3]: hashlib.sha256(q.read_bytes()).hexdigest()
+                for q, ziel in kopien if ziel.startswith("gal_")}
     for datei in args:
         p = pathlib.Path(datei)
         kopien.append((p, gal_name(p.stem) + ".py"))
@@ -44,7 +49,13 @@ def main():
     for quelle, ziel in kopien:
         print("%-28s -> :%s" % (quelle.relative_to(REPO) if quelle.is_relative_to(REPO) else quelle, ziel))
         befehl += ["fs", "cp", str(quelle), ":" + ziel, "+"]
-    befehl += ["reset"]
+    # Liste der vertrauenswuerdigen Apps auf dem Board ergaenzen (nicht ersetzen)
+    befehl += ["exec", "import json, os\n"
+               "try:\n os.mkdir('/hubdaten')\nexcept OSError:\n pass\n"
+               "try:\n d = json.load(open('/hubdaten/_installiert.json'))\nexcept Exception:\n d = {}\n"
+               "d.update(%s)\n"
+               "f = open('/hubdaten/_installiert.json', 'w'); json.dump(d, f); f.close()" % json.dumps(vertraut),
+               "+", "reset"]
     try:
         subprocess.run(befehl, check=True)
     except FileNotFoundError:

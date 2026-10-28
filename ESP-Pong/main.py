@@ -1,3 +1,6 @@
+# HUB-NAME: ESP Pong
+# HUB-VERSION: 2.1
+# HUB-INFO: Multiplayer-Pong ueber ESP-NOW mit Lobby fuer alle Boards
 # =====================================================================
 #  ESP-PONG v2.0 - Multiplayer-Pong fuer BZTG espBoards ueber ESP-NOW
 # =====================================================================
@@ -35,7 +38,7 @@ import espnow
 # =====================================================================
 #  EINSTELLUNGEN
 # =====================================================================
-VERSION = "v2.0"            # wird in der Lobby angezeigt
+VERSION = "v2.1"            # wird in der Lobby angezeigt
 NAME = ""                   # eigener Name (max. 8 Zeichen), leer = "#Nummer"
 TASTEN_AKTIV_HIGH = True    # Board: 3,3 V ueber Taster, 10k Pull-down
 HOCH_POSITIV = True         # Joystick: positiver ADC-Wert = nach oben
