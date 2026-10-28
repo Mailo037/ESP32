@@ -5,64 +5,133 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>espBoard-Simulator</title>
 <meta name="description" content="Das BZTG espBoard im Browser: lädt die Programme aus GitHub und führt main.py mit echtem MicroPython aus.">
+<meta name="theme-color" content="#09090b">
 <script src="coi-serviceworker.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
-<link rel="stylesheet" crossorigin="anonymous" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" crossorigin="anonymous" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
 <style>
-/* Werkbank bei Nacht: dunkler Tisch, grüne Platine, cyanfarbenes OLED.
-   Bewusst nur ein (dunkles) Farbschema - wie das echte Board auf dem Tisch. */
+/* Design "Graphit" wie Portal und Admin (siehe design.md im Service-Branch).
+   Nur das Board selbst bleibt eine realistische Abbildung der echten Platine. */
 :root {
-  --tisch: #11161a;
-  --tisch-2: #182027;
-  --linie: #2a3640;
-  --text: #dfe8ee;
-  --text-2: #92a4b1;
-  --pcb: #1d7a3b;
-  --pcb-dunkel: #145a2b;
-  --silk: #f2f5ef;
-  --oled: #6fe3ff;
-  --oled-aus: #050a0e;
-  --led-rot: #ff3b2f;
-  --led-gelb: #ffd23a;
-  --akzent: #ffb02e;
-  --fehler: #ff7a6b;
-  --f-silk: "Barlow Condensed", "Arial Narrow", Arial, sans-serif;
-  --f-text: "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
-  --f-mono: "IBM Plex Mono", Consolas, Menlo, monospace;
   color-scheme: dark;
+  --bg: #09090b; --fl: #111113; --fl2: #18181b; --li: #232327; --li2: #1c1c20; --hov: #3a3a40;
+  --tx: #fafafa; --tx2: #d4d4d8; --le: #8b8b94; --ak: #fafafa; --ak-tx: #09090b; --ak-hov: #e4e4e7;
+  --ring: rgba(250,250,250,.22); --gr: #4ade80; --ge: #fbbf24; --rt: #f87171; --r: 10px;
+  --f: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --fm: "Geist Mono", ui-monospace, Consolas, monospace;
+  /* Platine */
+  --pcb: #1d7a3b; --pcb-dunkel: #145a2b; --silk: #f2f5ef; --oled: #6fe3ff;
+  --led-rot: #ff3b2f; --led-gelb: #ffd23a; --akzent: #fafafa;
+  --f-silk: "Barlow Condensed", "Arial Narrow", Arial, sans-serif;
+  --f-text: var(--f);
 }
-html, body { background: var(--tisch); color: var(--text); }
-body { font-family: var(--f-text); font-size: 15px; line-height: 1.5; margin: 0;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-.seite { max-width: 1320px; margin: 0 auto; padding-block: 20px 48px; display: grid; gap: 20px; }
+* { box-sizing: border-box; }
+html { scrollbar-color: var(--li) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--li); border-radius: 99px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-track { background: transparent; }
+html, body { background: var(--bg); color: var(--tx); }
+body { font: 15px/1.55 var(--f); margin: 0; -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-decoration: none; }
+button, input { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+.ic { width: 18px; height: 18px; flex: none; }
 
-header.kopf { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
-h1 { font-family: var(--f-silk); font-weight: 700; font-size: clamp(28px, 4vw, 40px); letter-spacing: .02em; margin: 0; line-height: 1; text-wrap: balance; }
-h1 small { display: block; font: 500 14px/1.4 var(--f-text); color: var(--text-2); letter-spacing: 0; margin-top: 6px; }
-.quelle { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--text-2); }
-.quelle input { font: 500 13px var(--f-mono); background: var(--tisch-2); color: var(--text); border: 1px solid var(--linie); border-radius: 6px; padding: 6px 8px; width: 9.5em; }
-.quelle input#repo { width: 15em; }
-.quelle select{font:inherit;background:var(--tisch-2);color:var(--text);border:1px solid var(--linie);border-radius:6px;padding:6px 8px}
-.online-raster{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
-.online-app{padding:14px;border:1px solid var(--linie);border-radius:10px;background:var(--tisch-2)}
-.online-app h3{margin:0 0 6px}.online-app p{font-size:13px;color:var(--text-2)}
-#online-katalog{margin:24px 0}a{color:var(--text-2)}
-button, select { font: 600 14px var(--f-text); color: var(--text); background: var(--tisch-2); border: 1px solid var(--linie); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
-button:hover, select:hover { border-color: var(--text-2); }
-button.haupt { background: var(--akzent); color: #1d1405; border-color: var(--akzent); }
-button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
-.status { font-size: 13px; color: var(--text-2); min-height: 1.5em; }
-.status.fehler { color: var(--fehler); }
+/* ---------- Kopfleiste */
+.leiste { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap;
+  padding: 10px max(16px, env(safe-area-inset-left, 0px)); background: rgba(9,9,11,.92); backdrop-filter: blur(10px); border-bottom: 1px solid var(--li); }
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; letter-spacing: -.01em; }
+.logo small { font-weight: 500; color: var(--le); font-size: 13px; }
+.mark { width: 28px; height: 28px; border-radius: 8px; background: var(--ak); color: var(--ak-tx); display: grid; place-items: center; }
+.mark .ic { width: 16px; height: 16px; }
+.quelle { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-left: auto; }
+.quelle .feld { width: 9.5em; }
+.quelle #repo { width: 14em; }
 
-.haupt-bereich { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 20px; align-items: start; }
+/* ---------- Bausteine */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 500; line-height: 1.4;
+  background: var(--ak); color: var(--ak-tx); border: 1px solid var(--ak); border-radius: 7px; padding: 7px 14px; cursor: pointer; white-space: nowrap;
+  transition: background .15s, border-color .15s, color .15s; }
+.btn:hover { background: var(--ak-hov); border-color: var(--ak-hov); }
+.btn.zweit { background: var(--fl2); color: var(--tx); border-color: var(--li); }
+.btn.zweit:hover { border-color: var(--hov); }
+.btn.geist { background: transparent; border-color: transparent; color: var(--le); }
+.btn.geist:hover { background: var(--fl); color: var(--tx); }
+.btn.klein { padding: 4px 10px; font-size: 13px; }
+.btn .ic { width: 16px; height: 16px; }
+.btn:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring); }
+.feld { background: var(--bg); border: 1px solid var(--li); border-radius: 7px; padding: 7px 11px; font: 400 13px var(--fm); color: var(--tx); outline: 0; min-width: 0;
+  transition: border-color .15s, box-shadow .15s; }
+.feld::placeholder { color: var(--le); }
+.feld:hover { border-color: var(--hov); }
+.feld:focus { border-color: var(--hov); box-shadow: 0 0 0 3px var(--ring); }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; border-radius: 99px; padding: 1px 9px;
+  background: var(--fl2); border: 1px solid var(--li); color: var(--tx2); white-space: nowrap; }
+.pill.mono { font-family: var(--fm); font-size: 11.5px; }
+
+/* Auswahl-Menue statt <select> */
+.auswahl { position: relative; display: inline-block; min-width: 0; }
+.auswahl-knopf { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; background: var(--bg); border: 1px solid var(--li);
+  border-radius: 7px; padding: 7px 9px 7px 11px; font-size: 14px; line-height: 1.45; cursor: pointer; text-align: left; color: var(--tx); transition: border-color .15s, box-shadow .15s; }
+.auswahl-knopf span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auswahl-knopf .ic { width: 15px; height: 15px; color: var(--le); transition: transform .15s; }
+.auswahl-knopf:hover { border-color: var(--hov); }
+.auswahl-knopf:focus-visible, .auswahl.offen .auswahl-knopf { outline: 0; border-color: var(--hov); box-shadow: 0 0 0 3px var(--ring); }
+.auswahl.offen .auswahl-knopf .ic { transform: rotate(180deg); }
+.auswahl-liste { display: none; position: fixed; z-index: 60; background: var(--fl2); border: 1px solid var(--li); border-radius: 9px; padding: 4px;
+  box-shadow: 0 16px 40px rgba(0,0,0,.55); max-height: 320px; overflow: auto; max-width: min(380px, calc(100vw - 16px)); }
+.auswahl.offen .auswahl-liste { display: grid; gap: 1px; }
+.auswahl-liste button { all: unset; box-sizing: border-box; display: block; position: relative; padding: 7px 12px 7px 30px; border-radius: 6px; font-size: 14px;
+  cursor: pointer; color: var(--tx2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.auswahl-liste button:hover, .auswahl-liste button:focus { background: var(--li); color: var(--tx); }
+.auswahl-liste button[aria-selected=true] { color: var(--tx); }
+.auswahl-liste button[aria-selected=true]::before { content: ""; position: absolute; left: 11px; top: 50%; width: 8px; height: 4px;
+  border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: translateY(-75%) rotate(-45deg); }
+.auswahl-leer { padding: 8px 12px; color: var(--le); font-size: 13.5px; }
+
+/* Schalter statt Checkbox */
+.schalter { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; font-size: 14px; color: var(--tx2); }
+.schalter input { appearance: none; -webkit-appearance: none; flex: none; width: 34px; height: 20px; margin: 1px 0 0; border-radius: 99px; background: var(--li);
+  position: relative; cursor: pointer; transition: background .15s; }
+.schalter input::before { content: ""; position: absolute; left: 3px; top: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--le); transition: transform .15s, background .15s; }
+.schalter input:checked { background: var(--tx); }
+.schalter input:checked::before { transform: translateX(14px); background: var(--bg); }
+.schalter input:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring); }
+
+/* ---------- Seite */
+.seite { max-width: 1360px; margin: 0 auto; padding: 24px max(16px, env(safe-area-inset-right, 0px)) 64px max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 20px; }
+.status { font-size: 13.5px; color: var(--le); min-height: 1.5em; display: flex; align-items: center; gap: 8px; }
+.status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--gr); flex: none; }
+.status.fehler { color: var(--rt); }
+.status.fehler::before { background: var(--rt); }
+.hinweis { border: 1px solid color-mix(in srgb, var(--ge) 30%, transparent); background: color-mix(in srgb, var(--ge) 7%, transparent); color: var(--tx2);
+  border-radius: var(--r); padding: 12px 16px; font-size: 14px; }
+h2 { font-weight: 600; font-size: 17px; letter-spacing: -.01em; margin: 0; }
+#online-katalog { display: grid; gap: 12px; }
+.katalog-kopf { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.katalog-kopf p { margin: 0; color: var(--le); font-size: 14px; }
+.katalog-kopf a { margin-left: auto; font-size: 14px; color: var(--le); display: inline-flex; gap: 6px; align-items: center; }
+.katalog-kopf a:hover { color: var(--tx); }
+.online-raster { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; color: var(--le); font-size: 14px; }
+.online-app { padding: 14px 16px; border: 1px solid var(--li); border-radius: var(--r); background: var(--fl); display: flex; flex-direction: column; gap: 4px; transition: border-color .15s; }
+.online-app:hover { border-color: var(--hov); }
+.online-app h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--tx); }
+.online-app p { margin: 0; font-size: 13.5px; color: var(--le); }
+.online-app p:first-of-type { font: 400 12px var(--fm); }
+.online-app button { margin-top: auto; align-self: flex-start; }
+.online-app p + button { margin-top: 10px; }
+
+.haupt-bereich { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
 .boards { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); }
-.board-karte { display: grid; gap: 10px; min-width: 0; width: 100%; max-width: 640px; }
+.board-karte { display: grid; gap: 10px; min-width: 0; width: 100%; max-width: 640px; background: var(--fl); border: 1px solid var(--li); border-radius: 12px; padding: 12px; transition: border-color .15s; }
+.board-karte.aktiv { border-color: var(--hov); }
 .board-leiste { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.board-leiste .name { font: 700 18px var(--f-silk); letter-spacing: .04em; margin-right: auto; }
-.board-karte.aktiv .board { box-shadow: 0 0 0 3px var(--akzent), 0 18px 40px rgba(0,0,0,.45); }
+.board-leiste .name { font-weight: 600; font-size: 15px; margin-right: 4px; display: flex; align-items: center; gap: 8px; }
+.board-leiste .name::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--hov); }
+.board-karte.aktiv .board-leiste .name::before { background: var(--gr); }
+.board-leiste .auswahl { flex: 1; min-width: 160px; }
 
-/* ---------- Platine ---------- */
+/* ---------- Platine */
 .board { position: relative; width: 100%; aspect-ratio: 990 / 960; container-type: inline-size;
   background: radial-gradient(120% 90% at 30% 20%, #23894a 0%, var(--pcb) 45%, var(--pcb-dunkel) 100%);
   border-radius: 1.2cqw; box-shadow: 0 18px 40px rgba(0,0,0,.45); user-select: none; -webkit-user-select: none; touch-action: none; overflow: hidden; }
@@ -104,54 +173,66 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .zeige-nummern .nummer { opacity: .95; }
 .salat { position: absolute; left: 44%; top: 88.5%; background: #fff; color: #111; font: 600 3cqw var(--f-text); padding: .2cqw 1cqw; border-radius: .3cqw; transform: rotate(-1deg); }
 
-.konsole { background: #070b0e; border: 1px solid var(--linie); border-radius: 8px; font: 12.5px/1.45 var(--f-mono); color: #b9d6c3; padding: 8px 10px; height: 120px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-.konsole .e { color: var(--fehler); }
-.konsole .s { color: var(--text-2); }
+.board-karte.aktiv .board { box-shadow: 0 0 0 2px rgba(250,250,250,.7), 0 18px 40px rgba(0,0,0,.45); }
 
-/* ---------- Seitenleiste ---------- */
+.konsole { background: #000; border: 1px solid var(--li); border-radius: 8px; font: 12.5px/1.5 var(--fm); color: var(--tx2); padding: 8px 10px; height: 120px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.konsole .e { color: var(--rt); }
+.konsole .s { color: var(--le); }
+
+/* ---------- Seitenleiste */
 aside { display: grid; gap: 16px; min-width: 0; }
-.kasten { background: var(--tisch-2); border: 1px solid var(--linie); border-radius: 10px; padding: 14px 16px; display: grid; gap: 10px; }
-.kasten h2 { font: 700 19px var(--f-silk); letter-spacing: .04em; margin: 0; }
-.kasten p { margin: 0; color: var(--text-2); font-size: 13.5px; }
-.tasten { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13.5px; align-items: baseline; }
-kbd { font: 500 12px var(--f-mono); background: #0c1114; border: 1px solid var(--linie); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+.kasten { background: var(--fl); border: 1px solid var(--li); border-radius: var(--r); padding: 16px 18px; display: grid; gap: 12px; }
+.kasten p { margin: 0; color: var(--le); font-size: 13.5px; }
+.tasten { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; font-size: 13.5px; align-items: baseline; color: var(--tx2); }
+kbd { font: 500 11.5px var(--fm); color: var(--tx2); background: var(--bg); border: 1px solid var(--li); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; white-space: nowrap; margin-right: 2px; }
 table.mess { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-table.mess td { padding: 5px 0; border-bottom: 1px solid var(--linie); vertical-align: middle; }
-table.mess td.wert { text-align: right; font: 500 14px var(--f-mono); font-variant-numeric: tabular-nums; width: 5.5em; }
-.balken { height: 6px; background: #0c1114; border-radius: 3px; overflow: hidden; margin-top: 3px; }
-.balken i { display: block; height: 100%; width: 0; background: var(--oled); }
-ol.teile { margin: 0; padding-left: 1.4em; display: grid; gap: 4px; font-size: 13.5px; }
-ol.teile button { all: unset; cursor: pointer; color: var(--text); border-bottom: 1px dotted var(--text-2); }
-ol.teile button:hover, ol.teile button:focus-visible { color: var(--akzent); border-color: var(--akzent); }
-.optionen { display: grid; gap: 6px; font-size: 13.5px; }
-.optionen label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
-.online { display: grid; gap: 6px; font-size: 13px; color: var(--text-2); }
-.online input { font: 500 13px var(--f-mono); background: var(--tisch-2); color: var(--text); border: 1px solid var(--linie); border-radius: 6px; padding: 6px 8px; width: 100%; box-sizing: border-box; }
-.hinweis { border: 1px solid #6b4b16; background: #2a1f0c; color: #ffd9a0; border-radius: 10px; padding: 12px 14px; font-size: 14px; }
-.hinweis[hidden] { display: none; }
-a { color: var(--oled); }
-footer { color: var(--text-2); font-size: 13px; }
-@media (max-width: 980px) { .haupt-bereich { grid-template-columns: minmax(0, 1fr); } }
+table.mess td { padding: 8px 0; border-bottom: 1px solid var(--li2); vertical-align: middle; color: var(--tx2); }
+table.mess tr:last-child td { border-bottom: 0; }
+table.mess td b { font: 500 12px var(--fm); color: var(--tx); }
+table.mess td.wert { text-align: right; font: 500 13px var(--fm); font-variant-numeric: tabular-nums; width: 5.5em; color: var(--tx); }
+.balken { height: 4px; background: var(--li); border-radius: 99px; overflow: hidden; margin-top: 6px; }
+.balken i { display: block; height: 100%; width: 0; background: var(--tx2); border-radius: 99px; }
+ol.teile { margin: 0; padding-left: 1.4em; display: grid; gap: 8px; font-size: 13.5px; color: var(--le); }
+ol.teile li::marker { font: 500 12px var(--fm); }
+ol.teile button { all: unset; cursor: pointer; color: var(--tx); font-weight: 500; border-bottom: 1px dotted var(--hov); }
+ol.teile button:hover, ol.teile button:focus-visible { border-color: var(--tx); }
+ol.teile small { color: var(--le); font-size: 12.5px; }
+.optionen { display: grid; gap: 12px; }
+.online { display: grid; gap: 6px; font-size: 13px; color: var(--le); font-weight: 500; }
+.online .feld { width: 100%; margin-bottom: 6px; }
+footer { color: var(--le); font-size: 13px; border-top: 1px solid var(--li); padding-top: 16px; }
+@media (max-width: 1020px) { .haupt-bereich { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 720px) { .quelle { margin-left: 0; width: 100%; } .quelle .feld, .quelle #repo { flex: 1; width: auto; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chip" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx=".6"/><path d="M9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></g></symbol>
+  <symbol id="i-runter" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-neu" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></g></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></g></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+</svg>
+
+<header class="leiste">
+  <a class="logo" href="/"><span class="mark"><svg class="ic"><use href="#i-chip"/></svg></span>ESP-Hub <small>Simulator</small></a>
+  <form class="quelle" id="quelle">
+    <div class="auswahl" id="quelle-typ" style="width:12em"></div>
+    <span id="github-felder" hidden style="display:contents">
+      <input class="feld" id="repo" value="Mailo037/ESP32" spellcheck="false" aria-label="Repository" placeholder="Repository">
+      <input class="feld" id="branch" value="programs" spellcheck="false" aria-label="Branch" placeholder="Branch">
+    </span>
+    <button class="btn zweit" type="submit"><svg class="ic"><use href="#i-neu"/></svg>Neu laden</button>
+  </form>
+</header>
+
 <div class="seite">
-  <header class="kopf">
-    <h1>espBoard-Simulator
-      <small>Online-Apps mit echtem MicroPython ausprobieren – mit Modulen, Assets und gemeinsamen Hub-Treibern.</small>
-    </h1>
-    <form class="quelle" id="quelle">
-      <label for="quelle-typ">Quelle</label><select id="quelle-typ"><option value="online">Online-App-Store</option><option value="github">GitHub-Repository</option></select>
-      <label for="repo">Repo</label><input id="repo" value="Mailo037/ESP32" spellcheck="false">
-      <label for="branch">Branch</label><input id="branch" value="programs" spellcheck="false">
-      <button type="submit">Neu laden</button>
-    </form>
-  </header>
   <div class="status" id="status" role="status">Lade Programmliste …</div>
   <div class="hinweis" id="hinweis" hidden></div>
   <section id="online-katalog" hidden aria-label="Online-Apps">
-    <h2>Online-Apps</h2><p id="online-konto"></p><p><a href="/" target="_blank" rel="noopener">Konto und Apps im Portal verwalten</a></p>
+    <div class="katalog-kopf"><h2>Online-Apps</h2><p id="online-konto"></p><a href="/" target="_blank" rel="noopener">Konto und Apps im Portal<svg class="ic" style="width:14px;height:14px"><use href="#i-ext"/></svg></a></div>
     <div class="online-raster" id="online-liste"></div>
   </section>
 
@@ -164,11 +245,11 @@ footer { color: var(--text-2); font-size: 13px; }
         <p>Klick auf ein Board macht es aktiv. Die Tastatur steuert das aktive Board; Tasten und Joystick gehen auch mit Maus oder Finger.</p>
         <div class="tasten">
           <span><kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd></span><span>Joystick</span>
-          <kbd>Leertaste</kbd><span>Joystick-Taster (S2)</span>
-          <kbd>W</kbd><span>S17 (oben)</span>
-          <kbd>A</kbd><span>S4 (links)</span>
-          <kbd>D</kbd><span>S5 (rechts)</span>
-          <kbd>S</kbd><span>S16 (unten)</span>
+          <span><kbd>Leertaste</kbd></span><span>Joystick-Taster (S2)</span>
+          <span><kbd>W</kbd></span><span>S17 (oben)</span>
+          <span><kbd>A</kbd></span><span>S4 (links)</span>
+          <span><kbd>D</kbd></span><span>S5 (rechts)</span>
+          <span><kbd>S</kbd></span><span>S16 (unten)</span>
           <span><kbd>Q</kbd><kbd>E</kbd></span><span>Poti RP3 drehen</span>
           <span><kbd>Z</kbd><kbd>C</kbd></span><span>Poti RP0 drehen</span>
         </div>
@@ -190,11 +271,11 @@ footer { color: var(--text-2); font-size: 13px; }
       <section class="kasten">
         <h2>Optionen</h2>
         <div class="optionen">
-          <label><input type="checkbox" id="opt-ton"> Summer hörbar</label>
-          <label><input type="checkbox" id="opt-timing" checked> Echtes I²C-Tempo (Display-Übertragung dauert wie am ESP32)</label>
-          <label><input type="checkbox" id="opt-nummern"> Bauteil-Nummern einblenden</label>
+          <label class="schalter"><input type="checkbox" id="opt-ton"><span>Summer hörbar</span></label>
+          <label class="schalter"><input type="checkbox" id="opt-timing" checked><span>Echtes I²C-Tempo (Display-Übertragung dauert wie am ESP32)</span></label>
+          <label class="schalter"><input type="checkbox" id="opt-nummern"><span>Bauteil-Nummern einblenden</span></label>
         </div>
-        <button type="button" id="zweites">+ Zweites Board (für ESP-Pong)</button>
+        <button type="button" class="btn zweit" id="zweites"><svg class="ic"><use href="#i-plus"/></svg>Zweites Board (für ESP-Pong)</button>
       </section>
 
       <section class="kasten">
@@ -202,9 +283,9 @@ footer { color: var(--text-2); font-size: 13px; }
         <p>Für den Hub: Bestenlisten, Spielstände, App-Store und Portal. Leer = nur lokal. Gilt ab dem nächsten Start.</p>
         <div class="online">
           <label for="online-url">Adresse des ESP-Hub-Servers (https)</label>
-          <input id="online-url" placeholder="https://esphub-steel.vercel.app" spellcheck="false">
+          <input class="feld" id="online-url" placeholder="https://esphub-steel.vercel.app" spellcheck="false">
           <label for="online-auth">Passwort (auth, optional)</label>
-          <input id="online-auth" spellcheck="false">
+          <input class="feld" id="online-auth" spellcheck="false">
         </div>
       </section>
     </aside>
