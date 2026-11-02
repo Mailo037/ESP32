@@ -88,10 +88,83 @@ def formular(text):
     return result
 
 
+SETUP_MS = 300000
+
+
+def _setup_bildschirm(oled, ssid, password, ip, rest_ms, zeile=""):
+    """Live screen: the running countdown shows the board still responds."""
+    import hub_apps as ha
+    s = max(0, rest_ms) // 1000
+    ha.kopfzeile(oled, "WI-FI SETUP", "%d:%02d" % (s // 60, s % 60))
+    oled.text(ssid[:16], 0, 13, 1)
+    oled.text(("PW " + password)[:16], 0, 23, 1)
+    oled.text(ip[:16], 0, 33, 1)
+    oled.hline(0, 44, 128, 1)
+    oled.text((zeile or "S4 = Cancel")[:16], 0, 52, 1)
+    oled.show()
+
+
+def _setup_antwort(client, status, page):
+    try:
+        body = ('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ESP-Hub Wi-Fi</title><style>body{font:18px system-ui;max-width:30rem;margin:2rem auto;padding:1rem}label,input,button{display:block;margin:1rem 0}input,button{font:inherit;padding:.6rem;box-sizing:border-box;max-width:100%}</style>' + page).encode()
+        client.sendall(('HTTP/1.1 ' + status + '\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: default-src \'none\'; style-src \'unsafe-inline\'; form-action \'self\'; frame-ancestors \'none\'\r\nConnection: close\r\nContent-Length: ' + str(len(body)) + '\r\n\r\n').encode() + body)
+    except OSError:
+        pass
+
+
+def _setup_anfrage(client, ip, csrf):
+    """Read one request. Returns (page, (wlan, passwort) or None)."""
+    client.settimeout(2)
+    raw = b""
+    while b"\r\n\r\n" not in raw and len(raw) <= 2048:
+        part = client.recv(256)
+        if not part:
+            raise ValueError("Incomplete request")
+        raw += part
+    head, sep, body = raw.partition(b"\r\n\r\n")
+    if not sep or len(head) > 2048:
+        raise ValueError("Request too large")
+    lines = head.decode().split("\r\n")
+    method, path, protocol = lines[0].split(" ")
+    headers = {}
+    for line in lines[1:]:
+        key, _, value = line.partition(":")
+        key = key.lower().strip()
+        if key in headers:
+            raise ValueError("Duplicate header")
+        headers[key] = value.strip()
+    if headers.get("host") not in (ip, ip + ":80") or headers.get("origin", "http://" + ip) != "http://" + ip:
+        raise ValueError("Request did not come from the setup page")
+    if method == "POST" and path == "/":
+        size = int(headers.get("content-length", "0"))
+        if not 0 < size <= 1024 or "transfer-encoding" in headers or not headers.get("content-type", "").startswith("application/x-www-form-urlencoded"):
+            raise ValueError("Invalid form")
+        while len(body) < size:
+            part = client.recv(min(256, size - len(body)))
+            if not part:
+                raise ValueError("Incomplete form")
+            body += part
+        form = formular(body[:size].decode())
+        if form.get("csrf") != csrf:
+            raise ValueError("Form expired")
+        wlan, pw = form.get("wlan", ""), form.get("passwort", "")
+        if not 0 < len(wlan.encode()) <= 32 or len(pw.encode()) > 63 or any(ord(c) < 32 for c in wlan + pw):
+            raise ValueError("Invalid Wi-Fi details")
+        # The check runs after this reply: joining the home network moves the
+        # setup network to its channel, so the phone may drop off briefly.
+        return ("<h1>Checking Wi-Fi ...</h1><p>Watch the board display. If the details work, "
+                "the board saves them and restarts. Otherwise reconnect to the setup network "
+                "and open this page again.</p>"), (wlan, pw)
+    if method == "GET" and path == "/":
+        return ('<h1>Set up ESP-Hub</h1><form method="post"><input type="hidden" name="csrf" value="' + csrf + '"><label>Wi-Fi name<input name="wlan" maxlength="32" required autocomplete="off"></label><label>Wi-Fi password<input type="password" name="passwort" maxlength="63" autocomplete="new-password"></label><button>Connect and save</button></form><p>Leave the password blank for open Wi-Fi. Press S4 on the board to cancel.</p>'), None
+    raise ValueError("Unknown page")
+
+
 def wlan_einrichten(oled, ein):
     """Explicit, password-protected AP; credentials stay on this board."""
     import network
     import socket
+    import select
     import binascii
     import hub_apps as ha
     password = binascii.hexlify(os.urandom(6)).decode()
@@ -102,100 +175,79 @@ def wlan_einrichten(oled, ein):
     sta = network.WLAN(network.STA_IF)
     try:
         sta.active(False)
-        ap.config(essid=ssid, password=password, authmode=3)
+        # Switch the AP on before configuring it: MicroPython builds differ
+        # in whether config() works while the Wi-Fi driver is stopped.
         ap.active(True)
+        ap.config(essid=ssid, password=password, authmode=3)
         ip = ap.ifconfig()[0]
         choice = ha.menue(oled, ein, "WI-FI SETUP", [ssid, "PW " + password, ip], ["Start", "Cancel"])
-        # Show the connection details throughout the five-minute setup window.
         if choice != 0:
             return False
-        ha.meldung(oled, ssid, "PW " + password, ip)
         server = socket.socket()
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((ip, 80))
-        server.listen(1)
-        server.settimeout(0.2)
+        server.listen(2)
+        # accept() with settimeout() can block for good on the ESP32 - then
+        # neither S4 nor the five-minute limit react and the board looks
+        # frozen. A non-blocking socket plus poll() keeps the loop running.
+        server.setblocking(False)
+        poller = select.poll()
+        poller.register(server, select.POLLIN)
         start = time.ticks_ms()
+        shown = None
         ein.warte_los()
-        while time.ticks_diff(time.ticks_ms(), start) < 300000:
+        while True:
+            rest = SETUP_MS - time.ticks_diff(time.ticks_ms(), start)
+            if rest <= 0:
+                return False
+            if rest // 1000 != shown:
+                shown = rest // 1000
+                _setup_bildschirm(oled, ssid, password, ip, rest)
             if ein.lesen() == "zurueck":
                 return False
+            if not poller.poll(30):
+                continue
             try:
                 client, address = server.accept()
             except OSError:
                 continue
-            saved = False
+            daten = None
             try:
-                client.settimeout(2)
-                raw = b""
-                while b"\r\n\r\n" not in raw and len(raw) <= 2048:
-                    part = client.recv(256)
-                    if not part:
-                        raise ValueError("Incomplete request")
-                    raw += part
-                head, sep, body = raw.partition(b"\r\n\r\n")
-                if not sep or len(head) > 2048:
-                    raise ValueError("Request too large")
-                lines = head.decode().split("\r\n")
-                method, path, protocol = lines[0].split(" ")
-                headers = {}
-                for line in lines[1:]:
-                    key, _, value = line.partition(":")
-                    key = key.lower().strip()
-                    if key in headers:
-                        raise ValueError("Duplicate header")
-                    headers[key] = value.strip()
-                if headers.get("host") not in (ip, ip + ":80") or headers.get("origin", "http://" + ip) != "http://" + ip:
-                    raise ValueError("Request did not come from the setup page")
-                if method == "POST" and path == "/":
-                    size = int(headers.get("content-length", "0"))
-                    if not 0 < size <= 1024 or "transfer-encoding" in headers or not headers.get("content-type", "").startswith("application/x-www-form-urlencoded"):
-                        raise ValueError("Invalid form")
-                    while len(body) < size:
-                        part = client.recv(min(256, size - len(body)))
-                        if not part:
-                            raise ValueError("Incomplete form")
-                        body += part
-                    form = formular(body[:size].decode())
-                    if form.get("csrf") != csrf:
-                        raise ValueError("Form expired")
-                    wlan, pw = form.get("wlan", ""), form.get("passwort", "")
-                    if not 0 < len(wlan.encode()) <= 32 or len(pw.encode()) > 63 or any(ord(c) < 32 for c in wlan + pw):
-                        raise ValueError("Invalid Wi-Fi details")
-                    config = konfig_lesen() or {"url": "https://esphub-steel.vercel.app", "auth": ""}
-                    config.update(wlan=wlan, passwort=pw)
-                    # Verify the new network before replacing the old configuration.
-                    sta.active(True)
-                    sta.connect(wlan, pw)
-                    deadline = time.ticks_ms()
-                    while not sta.isconnected() and time.ticks_diff(time.ticks_ms(), deadline) < 8000:
-                        time.sleep_ms(100)
-                    if not sta.isconnected():
-                        raise ValueError("Wi-Fi unavailable. Check your details and try again.")
-                    _json_schreiben(KONFIG, config)
-                    saved = True
-                    page = "<h1>Wi-Fi saved</h1><p>The board will restart now.</p>"
-                elif method == "GET" and path == "/":
-                    page = '<h1>Set up ESP-Hub</h1><form method="post"><input type="hidden" name="csrf" value="' + csrf + '"><label>Wi-Fi name<input name="wlan" maxlength="32" required autocomplete="off"></label><label>Wi-Fi password<input type="password" name="passwort" maxlength="63" autocomplete="new-password"></label><button>Connect and save</button></form><p>Leave the password blank for open Wi-Fi. Press S4 on the board to cancel.</p>'
-                else:
-                    raise ValueError("Unknown page")
+                page, daten = _setup_anfrage(client, ip, csrf)
                 status = "200 OK"
             except Exception:
                 # No request text or submitted password is reflected into HTML/logs.
                 page = '<h1>Setup was not saved</h1><p>Check your Wi-Fi details and connection.</p><a href="/">Try again</a>'
                 status = "400 Bad Request"
-            try:
-                body = ('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ESP-Hub Wi-Fi</title><style>body{font:18px system-ui;max-width:30rem;margin:2rem auto;padding:1rem}label,input,button{display:block;margin:1rem 0}input,button{font:inherit;padding:.6rem;box-sizing:border-box;max-width:100%}</style>' + page).encode()
-                client.sendall(('HTTP/1.1 ' + status + '\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: default-src \'none\'; style-src \'unsafe-inline\'; form-action \'self\'; frame-ancestors \'none\'\r\nConnection: close\r\nContent-Length: ' + str(len(body)) + '\r\n\r\n').encode() + body)
-            except OSError:
-                pass
-            finally:
-                client.close()
-            if saved:
-                time.sleep_ms(500)
+            _setup_antwort(client, status, page)
+            client.close()
+            if daten is None:
+                continue
+            # Verify the new network before replacing the old configuration.
+            _setup_bildschirm(oled, ssid, password, ip, rest, "Checking Wi-Fi")
+            sta.active(True)
+            sta.connect(daten[0], daten[1])
+            begonnen = time.ticks_ms()
+            while not sta.isconnected() and time.ticks_diff(time.ticks_ms(), begonnen) < 10000:
+                if ein.lesen() == "zurueck":
+                    return False
+                time.sleep_ms(100)
+            if sta.isconnected():
+                config = konfig_lesen() or {"url": "https://esphub-steel.vercel.app", "auth": ""}
+                config.update(wlan=daten[0], passwort=daten[1])
+                _json_schreiben(KONFIG, config)
+                ha.meldung(oled, "Wi-Fi saved", "Restarting ...")
+                time.sleep_ms(800)
                 machine.reset()
                 return True
-        return False
+            try:
+                sta.disconnect()
+            except OSError:
+                pass
+            sta.active(False)
+            _setup_bildschirm(oled, ssid, password, ip, rest, "Failed - retry")
+            time.sleep_ms(1500)
+            shown = None
     except Exception as error:
         ha.fehler_dialog(oled, ein, "Wi-Fi setup", error)
         return False
