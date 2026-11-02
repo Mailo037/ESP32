@@ -439,13 +439,16 @@ def wlan_einrichten(oled, ein):
         poller = select.poll()
         poller.register(server, select.POLLIN)
         dns = None
+        dns_gezaehlt = 0
         try:
             dns = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             dns.bind((ip, 53))
             dns.setblocking(False)
             poller.register(dns, select.POLLIN)
-        except OSError:
+        except OSError as e:
+            print("Setup: no DNS:", e)
             dns = None              # ohne DNS: IP von Hand im Browser eingeben
+        print("Setup: listening on", ip)
         start = time.ticks_ms()
         shown = None
         ein.warte_los()
@@ -465,6 +468,9 @@ def wlan_einrichten(oled, ein):
                     a = _dns_antwort(q, ip)
                     if a:
                         dns.sendto(a, adresse)
+                        if not dns_gezaehlt:
+                            print("Setup: DNS answered for", adresse[0])
+                        dns_gezaehlt += 1
                 except OSError:
                     pass
             if not any(b is server for b in bereit):
@@ -473,11 +479,15 @@ def wlan_einrichten(oled, ein):
                 client, address = server.accept()
             except OSError:
                 continue
+            # Diagnose ohne Inhalte: nie Formulardaten oder Passwoerter ausgeben
+            print("Setup: request from", address[0])
             daten = None
             try:
                 page, daten = _setup_anfrage(client, ip, csrf)
                 status = "200 OK"
+                print("Setup: served", "form" if daten is None else "details received")
             except _Umleitung:
+                print("Setup: redirected to setup page")
                 try:
                     client.sendall(("HTTP/1.1 302 Found\r\nLocation: http://" + ip + "/\r\nCache-Control: no-store\r\n"
                                     "Content-Length: 0\r\nConnection: close\r\n\r\n").encode())
@@ -485,8 +495,9 @@ def wlan_einrichten(oled, ein):
                     pass
                 client.close()
                 continue
-            except Exception:
-                # No request text or submitted password is reflected into HTML/logs.
+            except Exception as e:
+                # Only our own error texts, never request content or passwords
+                print("Setup: rejected:", type(e).__name__, e if isinstance(e, ValueError) else "")
                 page = '<h1>Setup was not saved</h1><p>Check your Wi-Fi details and connection.</p><a href="/">Try again</a>'
                 status = "400 Bad Request"
             _setup_antwort(client, status, page)
@@ -502,6 +513,7 @@ def wlan_einrichten(oled, ein):
                 if ein.lesen() == "zurueck":
                     return False
                 time.sleep_ms(100)
+            print("Setup: home Wi-Fi", "connected" if sta.isconnected() else "failed, status %s" % sta.status())
             if sta.isconnected():
                 config = konfig_lesen() or {"url": STANDARD_URL, "auth": ""}
                 config.update(wlan=daten[0], passwort=daten[1])
