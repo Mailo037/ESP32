@@ -29,6 +29,28 @@ import os
 import sys
 if sys.modules.get("_hub_boot", {}).get("error") or getattr(sys, "_hub_update_fehler", False):
     raise RuntimeError("Complete the hub update before starting")
+
+# Schlanke Funk-Modi (Board info -> Set up Wi-Fi / Be a repeater): Der
+# Menuepunkt legt eine Merkdatei an und startet neu. Der WLAN-Treiber braucht
+# viel zusammenhaengenden Speicher - nach Galerie und Hub-Modulen ist der
+# zu zerstueckelt ("WiFi Out of Memory", das Board blieb einfach stehen).
+# Darum startet er hier, VOR allen Hub-Imports. Die Merkdatei wird sofort
+# geloescht: stuerzt der Modus ab, kommt man beim naechsten Start normal raus.
+FUNK_MODI = (("/hubwifi.txt", "wlan"), ("/hubsuche.txt", "suche"), ("/hubrepeater.txt", "repeater"))
+FUNK_MODUS = None
+for _datei, _modus in FUNK_MODI:
+    try:
+        os.remove(_datei)
+        FUNK_MODUS = _modus
+        break
+    except OSError:
+        pass
+if FUNK_MODUS:
+    gc.collect()
+    import network
+    network.WLAN(network.AP_IF if FUNK_MODUS == "wlan" else network.STA_IF).active(True)
+    gc.collect()
+
 import machine
 import time
 from machine import Pin
@@ -392,7 +414,37 @@ def fehler_zeigen(name, e):
 # =====================================================================
 #  START
 # =====================================================================
+def funk_modus(modus):
+    """Einer der schlanken Modi; danach immer Neustart in die Galerie."""
+    oled = hub_apps.oled_neu()
+    ein = hub_apps.Eingabe()
+    try:
+        if modus == "wlan":
+            hub_online.wlan_einrichten(oled, ein, fragen=False)
+        elif modus == "suche":
+            hub_online.repeater_einrichten(oled, ein)
+        else:
+            k = hub_online.konfig_lesen()
+            if not k or k.get("modus") == "repeater":
+                raise OSError("Needs own Wi-Fi")
+            hub_apps.meldung(oled, "Repeater", "connecting ...")
+            netz = hub_online.Netz(k, 86400000)
+            try:
+                netz.verbinden()
+                hub_online.repeater_betreiben(oled, ein, netz)
+            finally:
+                netz.trennen()
+    except Exception as e:
+        hub_apps.fehler_dialog(oled, ein, "Wi-Fi", e)
+    hub_apps.meldung(oled, "Restarting ...")
+    time.sleep_ms(300)
+    machine.reset()
+
+
 def main():
+    if FUNK_MODUS:
+        funk_modus(FUNK_MODUS)
+        return
     hub_apps.pakete_retten()
     name = lies(START_DATEI)
     if sys.modules.get("_hub_boot", {}).get("trial"):

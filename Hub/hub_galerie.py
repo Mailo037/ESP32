@@ -592,6 +592,17 @@ def koppeln(oled, ein):
         netz.trennen()
 
 
+def funk_neustart(oled, merker):
+    """Funk-Modi laufen nach einem Neustart, bevor der Hub Speicher belegt
+    (siehe FUNK_MODI in main.py)."""
+    import machine
+    with open(merker, "w") as f:
+        f.write("1")
+    ha.meldung(oled, "Restarting ...")
+    time.sleep_ms(300)
+    machine.reset()
+
+
 def info(oled, ein):
     k = hub_online.konfig_lesen()
     status = ""
@@ -600,8 +611,11 @@ def info(oled, ein):
         konto = hub_online.board_status().get("konto")
         zeilen = ["ID " + hub_online.board_id(),
                   "Flash " + ha.kb(ha.frei()) + " RAM " + ha.kb(gc.mem_free()),
-                  status or (("Account: " + konto) if konto else ("Online: on" if k else "Online: off"))]
-        punkte = (["Hub v" + ha.HUB_VERSION, "Sync now", "Pair", "Test connection"] if k else ["Hub v" + ha.HUB_VERSION]) + ["Set up Wi-Fi", "Diagnostics", "Back"]
+                  status or (("Account: " + konto) if konto else ("Online: repeater" if k and k.get("modus") == "repeater" else "Online: on" if k else "Online: off"))]
+        punkte = (["Hub v" + ha.HUB_VERSION, "Sync now", "Pair", "Test connection"] if k else ["Hub v" + ha.HUB_VERSION]) + ["Set up Wi-Fi"]
+        if k and k.get("modus") != "repeater":
+            punkte.append("Be a repeater")
+        punkte += ["Diagnostics", "Back"]
         w = ha.menue(oled, ein, "BOARD #%04d" % hub_online.board_nr(), zeilen, punkte)
         if w < 0 or punkte[w] == "Back":
             return
@@ -614,8 +628,11 @@ def info(oled, ein):
         elif punkte[w] == "Sync now":
             status = "Sync OK" if auftraege_ausfuehren(oled) else "Sync failed"
         elif punkte[w] == "Set up Wi-Fi":
-            hub_online.wlan_einrichten(oled, ein)
-            k = hub_online.konfig_lesen()
+            wahl = ha.menue(oled, ein, "SET UP WI-FI", ["Own network or", "another board"], ["Own Wi-Fi", "Via repeater", "Back"])
+            if wahl in (0, 1):
+                funk_neustart(oled, "/hubwifi.txt" if wahl == 0 else "/hubsuche.txt")
+        elif punkte[w] == "Be a repeater":
+            funk_neustart(oled, "/hubrepeater.txt")
         elif punkte[w] == "Diagnostics":
             d = hub_online._json_lesen(hub_online.DIAGNOSE, {})
             age = max(0, time.ticks_diff(time.ticks_ms(), hub_online.LETZTER_SYNC) // 1000) if hub_online.LETZTER_SYNC is not None else None

@@ -160,8 +160,9 @@ def _setup_anfrage(client, ip, csrf):
     raise ValueError("Unknown page")
 
 
-def wlan_einrichten(oled, ein):
-    """Explicit, password-protected AP; credentials stay on this board."""
+def wlan_einrichten(oled, ein, fragen=True):
+    """Explicit, password-protected AP; credentials stay on this board.
+    fragen=False: direkt starten (schlanker Modus nach dem Neustart)."""
     import network
     import socket
     import select
@@ -180,8 +181,7 @@ def wlan_einrichten(oled, ein):
         ap.active(True)
         ap.config(essid=ssid, password=password, authmode=3)
         ip = ap.ifconfig()[0]
-        choice = ha.menue(oled, ein, "WI-FI SETUP", [ssid, "PW " + password, ip], ["Start", "Cancel"])
-        if choice != 0:
+        if fragen and ha.menue(oled, ein, "WI-FI SETUP", [ssid, "PW " + password, ip], ["Start", "Cancel"]) != 0:
             return False
         server = socket.socket()
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -235,6 +235,7 @@ def wlan_einrichten(oled, ein):
             if sta.isconnected():
                 config = konfig_lesen() or {"url": "https://esphub-steel.vercel.app", "auth": ""}
                 config.update(wlan=daten[0], passwort=daten[1])
+                config.pop("modus", None)
                 _json_schreiben(KONFIG, config)
                 ha.meldung(oled, "Wi-Fi saved", "Restarting ...")
                 time.sleep_ms(800)
@@ -350,6 +351,11 @@ class Netz:
         return max(1, (ms + 999) // 1000)
 
     def verbinden(self):
+        if self.k.get("modus") == "repeater":
+            # Kein eigenes WLAN: Anfragen gehen per ESP-NOW an ein anderes Board
+            self.req = RepeaterClient()
+            self.req.verbinden(self.rest)
+            return
         import network
         self.sta = network.WLAN(network.STA_IF)
         self.sta.active(True)
@@ -370,6 +376,8 @@ class Netz:
     def trennen(self):
         # WLAN aus und requests/ssl wegraeumen: Spiele wie Pong brauchen
         # danach ESP-NOW auf ihrem eigenen Kanal und den ganzen RAM
+        if self.req is not None and hasattr(self.req, "beenden"):
+            self.req.beenden()
         self.req = None
         for n in ("requests", "urequests"):
             m = sys.modules.get(n)
@@ -885,3 +893,405 @@ def verbindung_testen():
         return False, str(e)[:32]
     finally:
         netz.trennen()
+
+
+# =====================================================================
+#  Repeater: Boards ohne eigenes WLAN gehen ueber ein anderes Board online
+# =====================================================================
+#  Ein Board mit WLAN startet in Board info "Be a repeater". Andere Boards
+#  waehlen bei "Set up Wi-Fi" den Punkt "Via repeater". Ihre HTTP-Anfragen
+#  gehen dann per ESP-NOW an den Repeater, der sie ueber sein WLAN an den
+#  Hub-Server schickt und die Antwort Stueck fuer Stueck zurueckfunkt.
+#
+#  Rahmen (max. 250 Bytes):
+#    HR? <nonce>                 Suche (Broadcast, Client)
+#    HR! <nonce>                 Antwort des Repeaters
+#    HQ/HS id seq(2) letzt daten Anfrage / Antwort, Stueck fuer Stueck
+#    HA id seq(2)                Quittung fuer ein Stueck
+#    HX id                       Abbruch (Client schliesst die Antwort)
+#  Stueck 0 ist ein JSON-Kopf, danach folgt der Body. Jedes Stueck wird
+#  quittiert, so laeuft kein Empfangspuffer ueber und grosse Downloads
+#  brauchen nicht mehr RAM als ein Stueck.
+#
+#  Der Repeater leitet nur an seine eigene Server-URL (und Store-URL)
+#  weiter, nie an beliebige Adressen.
+# =====================================================================
+STUECK = 240
+BROADCAST = b"\xff" * 6
+MERKER = CACHE + "/_repeater.json"   # zuletzt gefundener Repeater
+
+
+class Abbruch(Exception):
+    pass
+
+
+def _rahmen(typ, mid, seq, letzt, daten=b""):
+    return typ + bytes((mid, seq >> 8, seq & 255, 1 if letzt else 0)) + daten
+
+
+def _quittung(mid, seq):
+    return b"HA" + bytes((mid, seq >> 8, seq & 255))
+
+
+class Funk:
+    """ESP-NOW auf dem Kanal der STA-Schnittstelle."""
+
+    def __init__(self, kanal=None):
+        import network
+        import espnow
+        self.sta = network.WLAN(network.STA_IF)
+        self.sta.active(True)
+        try:
+            # Mit WLAN-Verbindung verpasst der Stromsparmodus ESP-NOW-Rahmen
+            self.sta.config(pm=self.sta.PM_NONE)
+        except (AttributeError, OSError, ValueError):
+            pass
+        if kanal:
+            self.kanal(kanal)
+        self.e = espnow.ESPNow()
+        self.e.active(True)
+        self.peers = set()
+        self.peer(BROADCAST)
+
+    def kanal(self, k=None):
+        if k is None:
+            return self.sta.config("channel")
+        try:
+            self.sta.disconnect()
+        except OSError:
+            pass
+        self.sta.config(channel=k)
+
+    def peer(self, mac):
+        if mac not in self.peers:
+            try:
+                self.e.add_peer(mac)
+            except OSError:
+                pass
+            self.peers.add(mac)
+
+    def senden(self, mac, msg):
+        self.peer(mac)
+        try:
+            return self.e.send(mac, msg, True)
+        except OSError:
+            return False
+
+    def empfangen(self, ms):
+        try:
+            return self.e.recv(ms)
+        except OSError:
+            return None, None
+
+    def aus(self):
+        try:
+            self.e.active(False)
+        except Exception:
+            pass
+
+
+def _mit_quittung(funk, mac, msg, mid, seq):
+    """Ein Stueck senden, bis es quittiert ist."""
+    for _ in range(6):
+        funk.senden(mac, msg)
+        ende = time.ticks_add(time.ticks_ms(), 400)
+        while time.ticks_diff(ende, time.ticks_ms()) > 0:
+            m, a = funk.empfangen(40)
+            if not a or m != mac:
+                continue
+            if a[:2] == b"HA" and len(a) >= 5 and a[2] == mid and ((a[3] << 8) | a[4]) == seq:
+                return
+            if a[:2] == b"HX" and len(a) >= 3 and a[2] == mid:
+                raise Abbruch()
+    raise OSError("Repeater not responding")
+
+
+def _strom(funk, mac, typ, mid, quelle):
+    """Stuecke aus quelle() senden; quelle liefert b"" am Ende."""
+    seq = 0
+    jetzt = quelle()
+    while True:
+        naechstes = quelle() if jetzt else b""
+        _mit_quittung(funk, mac, _rahmen(typ, mid, seq, not naechstes, jetzt), mid, seq)
+        if not naechstes:
+            return
+        jetzt = naechstes
+        seq += 1
+
+
+def _stuecke(kopf, body):
+    """Quelle: erst der Kopf als eigenes Stueck, dann der Body."""
+    teile = [kopf]
+    pos = [0]
+
+    def quelle():
+        if teile:
+            return teile.pop()
+        t = body[pos[0]:pos[0] + STUECK]
+        pos[0] += len(t)
+        return t
+    return quelle
+
+
+class _Empfang:
+    """Stuecke einer Nachricht der Reihe nach annehmen und quittieren."""
+
+    def __init__(self, funk, mac, typ, mid):
+        self.funk, self.mac, self.typ, self.mid = funk, mac, typ, mid
+        self.seq = 0
+        self.fertig = False
+
+    def annehmen(self, a):
+        """Gibt die Daten eines neuen Stuecks zurueck, sonst None."""
+        if a[:2] != self.typ or len(a) < 6 or a[2] != self.mid:
+            return None
+        seq = (a[3] << 8) | a[4]
+        if seq == self.seq - 1:                   # Quittung ging verloren
+            self.funk.senden(self.mac, _quittung(self.mid, seq))
+            return None
+        if seq != self.seq:
+            return None
+        self.funk.senden(self.mac, _quittung(self.mid, seq))
+        self.seq += 1
+        self.fertig = a[5] == 1
+        return a[6:]
+
+    def naechstes(self, ms):
+        ende = time.ticks_add(time.ticks_ms(), ms)
+        while time.ticks_diff(ende, time.ticks_ms()) > 0:
+            m, a = self.funk.empfangen(50)
+            if a and m == self.mac:
+                d = self.annehmen(a)
+                if d is not None:
+                    return d
+        raise OSError("Repeater timeout")
+
+
+# ---------------------------------------------------------------------
+#  Client: steht in Netz.req und spricht wie requests
+# ---------------------------------------------------------------------
+class _Roh:
+    def __init__(self, antwort):
+        self.a = antwort
+
+    def read(self, n=-1):
+        return self.a.lesen(n)
+
+
+class Antwort:
+    def __init__(self, client, empfang, ms):
+        self.c, self.emp = client, empfang
+        self.puffer = b""
+        kopf = json.loads(empfang.naechstes(ms))
+        self.status_code = kopf.get("s", 502)
+        self.raw = _Roh(self)
+        self._inhalt = None
+
+    def lesen(self, n=-1):
+        while not self.emp.fertig and (n < 0 or len(self.puffer) < n):
+            self.puffer += self.emp.naechstes(8000)
+        if n < 0:
+            n = len(self.puffer)
+        t, self.puffer = self.puffer[:n], self.puffer[n:]
+        return t
+
+    @property
+    def content(self):
+        if self._inhalt is None:
+            self._inhalt = self.lesen()
+        return self._inhalt
+
+    @property
+    def text(self):
+        return self.content.decode()
+
+    def json(self):
+        return json.loads(self.content)
+
+    def close(self):
+        if not self.emp.fertig:
+            self.c.funk.senden(self.c.mac, b"HX" + bytes((self.emp.mid,)))
+            self.emp.fertig = True
+
+
+class RepeaterClient:
+    def __init__(self):
+        self.funk = None
+        self.mac = None
+        self.mid = 0
+
+    def verbinden(self, rest=None):
+        """Repeater suchen: zuerst der zuletzt benutzte Kanal."""
+        merker = {}
+        try:
+            with open(MERKER) as f:
+                merker = json.load(f)
+        except (OSError, ValueError):
+            pass
+        kanaele = list(range(1, 14))
+        if merker.get("kanal") in kanaele:
+            kanaele.remove(merker["kanal"])
+            kanaele.insert(0, merker["kanal"])
+        self.funk = Funk(kanaele[0])
+        nonce = os.urandom(4)
+        for k in kanaele:
+            if rest:
+                rest()
+            self.funk.kanal(k)
+            self.funk.senden(BROADCAST, b"HR?" + nonce)
+            ende = time.ticks_add(time.ticks_ms(), 150)
+            while time.ticks_diff(ende, time.ticks_ms()) > 0:
+                m, a = self.funk.empfangen(30)
+                if a == b"HR!" + nonce:
+                    self.mac = m
+                    self.funk.peer(m)
+                    if merker.get("kanal") != k:
+                        try:
+                            os.mkdir(CACHE)
+                        except OSError:
+                            pass
+                        with open(MERKER, "w") as f:
+                            json.dump({"kanal": k}, f)
+                    return k
+        raise OSError("No repeater found")
+
+    def request(self, methode, url, timeout=5, data=None, headers=None):
+        self.mid = (self.mid + 1) & 255
+        kopf = json.dumps({"m": methode, "u": url, "h": headers or {}}).encode()
+        if len(kopf) > STUECK:
+            raise OSError("Repeater: request header too long")
+        body = data.encode() if isinstance(data, str) else (data or b"")
+        try:
+            _strom(self.funk, self.mac, b"HQ", self.mid, _stuecke(kopf, body))
+        except Abbruch:
+            raise OSError("Repeater aborted")
+        # Der Repeater braucht selbst bis zu ~8 s fuer HTTPS
+        return Antwort(self, _Empfang(self.funk, self.mac, b"HS", self.mid), timeout * 1000 + 9000)
+
+    def beenden(self):
+        if self.funk:
+            self.funk.aus()
+            try:
+                self.funk.sta.active(False)
+            except Exception:
+                pass
+        self.funk = None
+
+
+# ---------------------------------------------------------------------
+#  Repeater-Betrieb (Board mit eigenem WLAN)
+# ---------------------------------------------------------------------
+def _erlaubt(url, konfig):
+    for basis in (konfig.get("url"), konfig.get("store")):
+        if basis and url.startswith(basis.rstrip("/") + "/"):
+            return True
+    return False
+
+
+def _weiterleiten(funk, mac, mid, kopf, body, req, konfig):
+    try:
+        info = json.loads(kopf)
+        url = info["u"]
+        if not _erlaubt(url, konfig):
+            raise ValueError("URL not allowed")
+    except (ValueError, KeyError):
+        fehler = json.dumps({"error": "Repeater: request refused"}).encode()
+        _strom(funk, mac, b"HS", mid, _stuecke(json.dumps({"s": 403}).encode(), fehler))
+        return
+    try:
+        r = req.request(info.get("m", "GET"), url, timeout=8, data=body or None, headers=info.get("h") or {})
+    except Exception:
+        fehler = json.dumps({"error": "Repeater: server unreachable"}).encode()
+        _strom(funk, mac, b"HS", mid, _stuecke(json.dumps({"s": 502}).encode(), fehler))
+        return
+    try:
+        roh = getattr(r, "raw", None)
+        if roh is None:                          # Simulator: alles auf einmal
+            _strom(funk, mac, b"HS", mid, _stuecke(json.dumps({"s": r.status_code}).encode(), r.content))
+            return
+        teile = [json.dumps({"s": r.status_code}).encode()]
+
+        def quelle():
+            if teile:
+                return teile.pop()
+            return roh.read(STUECK) or b""
+        _strom(funk, mac, b"HS", mid, quelle)
+    finally:
+        r.close()
+
+
+def repeater_betreiben(oled, ein, netz, stopp=None):
+    """Bis S4 Anfragen anderer Boards weiterleiten. netz ist verbunden."""
+    import hub_apps as ha
+    funk = Funk()
+    kanal = funk.kanal()
+    laufend = {}        # mac -> [_Empfang, kopf, body]
+    zaehler = 0
+    gezeigt = None
+    ein.warte_los()
+    try:
+        while True:
+            if gezeigt != zaehler:
+                gezeigt = zaehler
+                ha.kopfzeile(oled, "REPEATER", "ch%d" % kanal)
+                oled.text("Other boards:", 0, 14, 1)
+                oled.text("Set up Wi-Fi >", 0, 24, 1)
+                oled.text("Via repeater", 0, 34, 1)
+                oled.hline(0, 44, 128, 1)
+                oled.text(("%d req  S4=Stop" % zaehler)[:16], 0, 52, 1)
+                oled.show()
+            if ein.lesen() == "zurueck" or (stopp and stopp()):
+                return zaehler
+            m, a = funk.empfangen(30)
+            if not a:
+                continue
+            if a[:3] == b"HR?" and len(a) == 7:
+                funk.senden(m, b"HR!" + a[3:])
+                continue
+            if a[:2] != b"HQ" or len(a) < 6:
+                continue
+            mid, seq = a[2], (a[3] << 8) | a[4]
+            z = laufend.get(m)
+            if seq == 0 and (z is None or z[0].mid != mid):
+                z = laufend[m] = [_Empfang(funk, m, b"HQ", mid), None, b""]
+            if z is None:
+                continue
+            d = z[0].annehmen(a)
+            if d is None:
+                continue
+            if z[1] is None:
+                z[1] = d
+            else:
+                z[2] += d
+                if len(z[2]) > 16384:            # kein Board schickt so viel
+                    del laufend[m]
+                    continue
+            if z[0].fertig:
+                del laufend[m]
+                try:
+                    _weiterleiten(funk, m, mid, z[1], z[2], netz.req, netz.k)
+                except (OSError, Abbruch):
+                    pass
+                zaehler += 1
+    finally:
+        funk.aus()
+
+
+def repeater_einrichten(oled, ein):
+    """'Via repeater': Repeater suchen und die Einstellung speichern."""
+    import hub_apps as ha
+    ha.meldung(oled, "Searching", "repeater ...", "")
+    c = RepeaterClient()
+    try:
+        kanal = c.verbinden()
+    except OSError:
+        ha.fehler_dialog(oled, ein, "Repeater", "No repeater found. Start 'Be a repeater' on a board with Wi-Fi.")
+        return False
+    finally:
+        c.beenden()
+    config = konfig_lesen() or {"url": "https://esphub-steel.vercel.app", "auth": ""}
+    config["modus"] = "repeater"
+    _json_schreiben(KONFIG, config)
+    ha.meldung(oled, "Repeater found", "channel %d" % kanal, "saved")
+    time.sleep_ms(1500)
+    return True
