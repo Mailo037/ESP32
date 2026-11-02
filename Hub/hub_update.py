@@ -332,7 +332,7 @@ def _setup_bildschirm(oled, ssid, password, ip, rest_ms, zeile=""):
 def _setup_antwort(client, status, page):
     try:
         body = ('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ESP-Hub Wi-Fi</title><style>body{font:18px system-ui;max-width:30rem;margin:2rem auto;padding:1rem}label,input,button{display:block;margin:1rem 0}input,button{font:inherit;padding:.6rem;box-sizing:border-box;max-width:100%}</style>' + page).encode()
-        client.sendall(('HTTP/1.1 ' + status + '\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: default-src \'none\'; style-src \'unsafe-inline\'; form-action \'self\'; frame-ancestors \'none\'\r\nConnection: close\r\nContent-Length: ' + str(len(body)) + '\r\n\r\n').encode() + body)
+        client.sendall(('HTTP/1.1 ' + status + '\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: default-src \'none\'; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; form-action \'self\'; frame-ancestors \'none\'\r\nConnection: close\r\nContent-Length: ' + str(len(body)) + '\r\n\r\n').encode() + body)
     except OSError:
         pass
 
@@ -449,7 +449,7 @@ def _setup_anfrage(client, ip, csrf, stand=None):
                 'reconnect to it.</p><a href="/">Try again</a>'), (wlan, pw)
     if method == "GET" and path == "/":
         fehler = ('<p style="color:#b00020"><b>' + _html(stand["fehler"]) + "</b> Please try again.</p>") if stand.get("fehler") else ""
-        return ('<h1>Set up ESP-Hub</h1>' + fehler + '<form method="post"><input type="hidden" name="csrf" value="' + csrf + '"><label>Wi-Fi name<input name="wlan" maxlength="32" required autocomplete="off" value="' + _html(stand.get("wlan", "")) + '"></label><label>Wi-Fi password<input type="password" name="passwort" maxlength="63" autocomplete="new-password"></label><button>Connect and save</button></form><p>Leave the password blank for open Wi-Fi. Press S4 on the board to cancel.</p>'), None
+        return ('<h1>Set up ESP-Hub</h1>' + fehler + '<form method="post"><input type="hidden" name="csrf" value="' + csrf + '"><label>Wi-Fi name<input name="wlan" maxlength="32" required autocomplete="off" value="' + _html(stand.get("wlan", "")) + '"></label><label>Wi-Fi password<input type="password" id="pw" name="passwort" maxlength="63" autocomplete="new-password"></label><label style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" style="width:auto;margin:0" onchange="document.getElementById(\'pw\').type=this.checked?\'text\':\'password\'">Show password</label><button>Connect and save</button></form><p>Leave the password blank for open Wi-Fi. Press S4 on the board to cancel.</p>'), None
     raise ValueError("Unknown page")
 
 
