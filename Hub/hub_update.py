@@ -358,8 +358,47 @@ def _dns_antwort(q, ip):
             b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04" + bytes(int(x) for x in ip.split(".")))
 
 
-def _setup_anfrage(client, ip, csrf):
-    """Read one request. Returns (page, (wlan, passwort) or None)."""
+def _html(text):
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
+
+
+def _setup_passwort():
+    """Passwort des Setup-Netzes: einmal zufaellig, dann fest pro Board. Nicht
+    aus der MAC ableiten - die sendet das Board offen als BSSID."""
+    datei = CACHE + "/_setup_pw.txt"
+    try:
+        with open(datei) as f:
+            pw = f.read().strip()
+        if len(pw) >= 8:
+            return pw
+    except OSError:
+        pass
+    import binascii
+    pw = binascii.hexlify(os.urandom(6)).decode()
+    try:
+        os.mkdir(CACHE)
+    except OSError:
+        pass
+    with open(datei, "w") as f:
+        f.write(pw)
+    return pw
+
+
+def _wlan_fehler(sta):
+    """Grund fuer die Webseite, warum das Heim-WLAN nicht ging."""
+    import network
+    s = sta.status()
+    if s == getattr(network, "STAT_WRONG_PASSWORD", None):
+        return "Wrong Wi-Fi password."
+    if s == getattr(network, "STAT_NO_AP_FOUND", None):
+        return "Wi-Fi network not found. Check the name and that it is in range (2.4 GHz)."
+    return "Could not connect to this Wi-Fi."
+
+
+def _setup_anfrage(client, ip, csrf, stand=None):
+    """Read one request. Returns (page, (wlan, passwort) or None).
+    stand: {"fehler": letzter Fehler, "wlan": zuletzt versuchter Name}."""
+    stand = stand or {}
     client.settimeout(2)
     raw = b""
     while b"\r\n\r\n" not in raw and len(raw) <= 2048:
@@ -402,11 +441,15 @@ def _setup_anfrage(client, ip, csrf):
             raise ValueError("Invalid Wi-Fi details")
         # The check runs after this reply: joining the home network moves the
         # setup network to its channel, so the phone may drop off briefly.
-        return ("<h1>Checking Wi-Fi ...</h1><p>Watch the board display. If the details work, "
-                "the board saves them and restarts. Otherwise reconnect to the setup network "
-                "and open this page again.</p>"), (wlan, pw)
+        # Die Seite laedt sich selbst neu: klappt es nicht, steht dort der Grund
+        # und das Formular zum erneuten Versuch.
+        return ('<meta http-equiv="refresh" content="14;url=/"><h1>Checking Wi-Fi ...</h1>'
+                "<p>If the details work, the board saves them and restarts. Otherwise this page "
+                "shows what went wrong in a few seconds. If your phone left the setup network, "
+                'reconnect to it.</p><a href="/">Try again</a>'), (wlan, pw)
     if method == "GET" and path == "/":
-        return ('<h1>Set up ESP-Hub</h1><form method="post"><input type="hidden" name="csrf" value="' + csrf + '"><label>Wi-Fi name<input name="wlan" maxlength="32" required autocomplete="off"></label><label>Wi-Fi password<input type="password" name="passwort" maxlength="63" autocomplete="new-password"></label><button>Connect and save</button></form><p>Leave the password blank for open Wi-Fi. Press S4 on the board to cancel.</p>'), None
+        fehler = ('<p style="color:#b00020"><b>' + _html(stand["fehler"]) + "</b> Please try again.</p>") if stand.get("fehler") else ""
+        return ('<h1>Set up ESP-Hub</h1>' + fehler + '<form method="post"><input type="hidden" name="csrf" value="' + csrf + '"><label>Wi-Fi name<input name="wlan" maxlength="32" required autocomplete="off" value="' + _html(stand.get("wlan", "")) + '"></label><label>Wi-Fi password<input type="password" name="passwort" maxlength="63" autocomplete="new-password"></label><button>Connect and save</button></form><p>Leave the password blank for open Wi-Fi. Press S4 on the board to cancel.</p>'), None
     raise ValueError("Unknown page")
 
 
@@ -416,9 +459,10 @@ def wlan_einrichten(oled, ein):
     import socket
     import select
     import binascii
-    password = binascii.hexlify(os.urandom(6)).decode()
+    password = _setup_passwort()
     csrf = binascii.hexlify(os.urandom(16)).decode()
     ssid = "ESP-Hub-" + board_id()[-4:]
+    stand = {}          # letzter Fehler fuer die Webseite
     ap = network.WLAN(network.AP_IF)
     server = None
     sta = network.WLAN(network.STA_IF)
@@ -484,7 +528,7 @@ def wlan_einrichten(oled, ein):
             print("Setup: request from", address[0])
             daten = None
             try:
-                page, daten = _setup_anfrage(client, ip, csrf)
+                page, daten = _setup_anfrage(client, ip, csrf, stand)
                 status = "200 OK"
                 print("Setup: served", "form" if daten is None else "details received")
             except _Umleitung:
@@ -525,6 +569,8 @@ def wlan_einrichten(oled, ein):
                 time.sleep_ms(800)
                 machine.reset()
                 return True
+            stand["fehler"] = _wlan_fehler(sta)
+            stand["wlan"] = daten[0]
             try:
                 sta.disconnect()
             except OSError:
