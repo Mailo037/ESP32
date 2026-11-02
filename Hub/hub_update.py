@@ -336,6 +336,27 @@ def _setup_antwort(client, status, page):
         pass
 
 
+class _Umleitung(Exception):
+    pass
+
+
+def _dns_antwort(q, ip):
+    """Jede DNS-Frage mit der eigenen IP beantworten. So merkt das Handy,
+    dass es ein Anmelde-Netz ist, und oeffnet die Setup-Seite von selbst."""
+    if len(q) < 17 or q[2] & 0x80:
+        return None
+    i = 12
+    while i < len(q) and q[i]:
+        i += q[i] + 1
+    if i + 5 > len(q):
+        return None
+    frage = q[12:i + 5]
+    if q[i + 1:i + 3] != b"\x00\x01":              # nur A-Eintraege, sonst leer
+        return q[:2] + b"\x81\x80\x00\x01\x00\x00\x00\x00\x00\x00" + frage
+    return (q[:2] + b"\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00" + frage +
+            b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04" + bytes(int(x) for x in ip.split(".")))
+
+
 def _setup_anfrage(client, ip, csrf):
     """Read one request. Returns (page, (wlan, passwort) or None)."""
     client.settimeout(2)
@@ -357,7 +378,11 @@ def _setup_anfrage(client, ip, csrf):
         if key in headers:
             raise ValueError("Duplicate header")
         headers[key] = value.strip()
-    if headers.get("host") not in (ip, ip + ":80") or headers.get("origin", "http://" + ip) != "http://" + ip:
+    if headers.get("host") not in (ip, ip + ":80"):
+        if method == "GET":
+            raise _Umleitung()      # Anmelde-Pruefung des Handys -> Setup-Seite
+        raise ValueError("Request did not come from the setup page")
+    if headers.get("origin", "http://" + ip) != "http://" + ip:
         raise ValueError("Request did not come from the setup page")
     if method == "POST" and path == "/":
         size = int(headers.get("content-length", "0"))
@@ -413,6 +438,14 @@ def wlan_einrichten(oled, ein):
         server.setblocking(False)
         poller = select.poll()
         poller.register(server, select.POLLIN)
+        dns = None
+        try:
+            dns = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            dns.bind((ip, 53))
+            dns.setblocking(False)
+            poller.register(dns, select.POLLIN)
+        except OSError:
+            dns = None              # ohne DNS: IP von Hand im Browser eingeben
         start = time.ticks_ms()
         shown = None
         ein.warte_los()
@@ -425,7 +458,16 @@ def wlan_einrichten(oled, ein):
                 _setup_bildschirm(oled, ssid, password, ip, rest)
             if ein.lesen() == "zurueck":
                 return False
-            if not poller.poll(30):
+            bereit = [e[0] for e in poller.poll(30)]
+            if dns is not None and any(b is dns for b in bereit):
+                try:
+                    q, adresse = dns.recvfrom(512)
+                    a = _dns_antwort(q, ip)
+                    if a:
+                        dns.sendto(a, adresse)
+                except OSError:
+                    pass
+            if not any(b is server for b in bereit):
                 continue
             try:
                 client, address = server.accept()
@@ -435,6 +477,14 @@ def wlan_einrichten(oled, ein):
             try:
                 page, daten = _setup_anfrage(client, ip, csrf)
                 status = "200 OK"
+            except _Umleitung:
+                try:
+                    client.sendall(("HTTP/1.1 302 Found\r\nLocation: http://" + ip + "/\r\nCache-Control: no-store\r\n"
+                                    "Content-Length: 0\r\nConnection: close\r\n\r\n").encode())
+                except OSError:
+                    pass
+                client.close()
+                continue
             except Exception:
                 # No request text or submitted password is reflected into HTML/logs.
                 page = '<h1>Setup was not saved</h1><p>Check your Wi-Fi details and connection.</p><a href="/">Try again</a>'
@@ -476,6 +526,8 @@ def wlan_einrichten(oled, ein):
     finally:
         if server:
             server.close()
+        if dns:
+            dns.close()
         sta.active(False)
         ap.active(False)
 
