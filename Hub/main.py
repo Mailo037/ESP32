@@ -1,5 +1,5 @@
 # =====================================================================
-#  ESP-HUB v2.0 - Spiele-Galerie mit App-Store fuer das BZTG espBoard
+#  ESP-HUB - versionierte Firmware mit App-Store fuer das BZTG espBoard
 # =====================================================================
 #  Auf dem Board liegt nur dieser Hub als main.py. Jedes Spiel ist eine
 #  eigene Datei "gal_<Name>.py" - neue Spiele kommen per Hochladen oder
@@ -27,6 +27,8 @@
 import gc
 import os
 import sys
+if sys.modules.get("_hub_boot", {}).get("error") or getattr(sys, "_hub_update_fehler", False):
+    raise RuntimeError("Complete the hub update before starting")
 import machine
 import time
 from machine import Pin
@@ -107,7 +109,14 @@ class _Sandbox:
         return self.basis + ("/" + "/".join(teile) if teile else "")
 
     def oeffnen(self, p, *a, **k):
-        return _open(self.pfad(p), *a, **k)
+        mode = a[0] if a else k.get("mode", "r")
+        path = self.pfad(p)
+        if not any(c in mode for c in "wax+"):
+            try:
+                return _open(path, *a, **k)
+            except OSError:
+                return _open(hub_apps.paketpfad(self.name) + path[len(self.basis):], *a, **k)
+        return _open(path, *a, **k)
 
     def os_modul(self):
         m = _Modul()
@@ -162,7 +171,7 @@ class _Sandbox:
         raise ZurGalerie()
 
     def menue(self):
-        """App-Menue mitten im Spiel. Das Spiel steht still; danach wird
+        """App-Menu mitten im Spiel. Das Spiel steht still; danach wird
         sein Bild wiederhergestellt und die Pause aus der Zeit gerechnet."""
         start = _zeit.ticks_ms()
         try:
@@ -186,16 +195,16 @@ class _Sandbox:
         zeilen = hub_apps.info_zeilen(self.name, k, self.nutzung(), lokal="hub" not in sys.modules)
         while True:
             w = hub_apps.menue(oled, ein, k["name"], zeilen,
-                               ["Weiter", "Schliessen", "Daten loeschen", "Deinstallieren"])
+                               ["Resume", "Close", "Delete save", "Uninstall"])
             if w in (-1, 0):
                 break
             if w == 1:
                 self.aktion = "ende"
                 break
-            if w == 2 and hub_apps.frage(oled, ein, "SPIELSTAND", "Deinen Spiel-", "stand loeschen?"):
+            if w == 2 and hub_apps.frage(oled, ein, "SAVE DATA", "Delete your", "saved progress?"):
                 self.aktion = "daten"
                 break
-            if w == 3 and hub_apps.frage(oled, ein, "DEINSTALLIEREN", k["name"], "entfernen?"):
+            if w == 3 and hub_apps.frage(oled, ein, "UNINSTALL", k["name"], "remove app?"):
                 self.aktion = "deinstall"
                 break
         if self.aktion is None and bild is not None:
@@ -256,7 +265,7 @@ class _Sandbox:
         return m
 
     def display_merken(self):
-        """Das Display-Objekt des Spiels merken (fuer das App-Menue)."""
+        """Das Display-Objekt des Spiels merken (fuer das App-Menu)."""
         try:
             import ssd1306
         except ImportError:
@@ -270,6 +279,13 @@ class _Sandbox:
         ssd1306.SSD1306.__init__ = init
 
     def einrichten(self, hub_api):
+        self.pfade_vorher = list(sys.path)
+        paket = hub_apps.paketpfad(self.name)
+        sys.path.insert(0, paket + "/lib")
+        sys.path.insert(0, paket)
+        for driver in ("ssd1306", "bmp280"):
+            if hub_apps.groesse(paket + "/" + driver + ".py") or hub_apps.groesse(paket + "/lib/" + driver + ".py"):
+                sys.modules.pop(driver, None)
         self.module_vorher = set(sys.modules)     # was das Spiel selbst laedt, zaehlt
         self.display_merken()
         z = self.zeit_modul()
@@ -278,7 +294,7 @@ class _Sandbox:
         self.vorher = {}
         for n, m in (("time", z), ("utime", z), ("os", o), ("uos", o), ("hub", hub_api),
                      ("main", gesperrt), ("hub_online", gesperrt), ("hub_apps", gesperrt),
-                     ("hub_galerie", gesperrt)):
+                     ("hub_galerie", gesperrt), ("hub_update", gesperrt), ("boot", gesperrt)):
             self.vorher[n] = sys.modules.get(n)
             if m is None:
                 sys.modules.pop(n, None)    # lokale App: "import hub" schlaegt fehl
@@ -286,6 +302,7 @@ class _Sandbox:
                 sys.modules[n] = m
 
     def aufraeumen(self):
+        sys.path[:] = self.pfade_vorher
         for n, m in self.vorher.items():
             if m is None:
                 sys.modules.pop(n, None)
@@ -295,18 +312,16 @@ class _Sandbox:
 
 def spiel_starten(name):
     datei = hub_apps.datei(name)
-    print("ESP-Hub: starte", datei)
+    print("ESP-Hub: starting", datei)
     # Nur Apps aus Store, Konto oder Repo (Pruefsumme passt) bekommen
     # Hub-Dienste. Selbst aufgespielte/veraenderte Apps laufen "lokal".
     vertraut = hub_apps.vertraut(name)
     speicher = hub_online.Speicher(name)
     sb = _Sandbox(name, speicher)
     if not vertraut:
-        print("ESP-Hub: lokale App - ohne Hub-Dienste")
+        print("ESP-Hub: local app without Hub services")
         speicher.konfig = None
-    if speicher.konfig:
-        meldung("Online-Daten", "laden ...")
-        speicher.abgleichen()
+    # Cached saves are immediately available. Network work belongs in the gallery.
     g = {"__name__": "__main__", "__file__": datei, "open": sb.oeffnen}
     fehler = None
     try:
@@ -323,7 +338,7 @@ def spiel_starten(name):
         sb.einrichten(speicher.api() if vertraut else None)
         exec(code, g)
     except ZurGalerie:
-        print("ESP-Hub: zurueck zur Galerie")
+        print("ESP-Hub: back to gallery")
     except SystemExit:
         pass
     except KeyboardInterrupt:
@@ -341,10 +356,8 @@ def spiel_starten(name):
         schreibe(START_DATEI, name)          # Spiel frisch neu starten
     elif sb.aktion == "deinstall":
         hub_apps.app_loeschen(name)
-    if speicher.konfig and speicher.offen():
-        meldung("Speichere", "online ...")
-        speicher.abgleichen()
     if fehler is not None:
+        hub_online.diagnose("App " + name + ": " + str(fehler))
         fehler_zeigen(name, fehler)
     neustart()
 
@@ -360,12 +373,12 @@ def fehler_zeigen(name, e):
     """Absturz anzeigen, mit S5 zurueck zur Galerie."""
     try:
         oled = hub_apps.oled_neu()
-        hub_apps.kopfzeile(oled, "FEHLER")
+        hub_apps.kopfzeile(oled, "ERROR")
         oled.text(hub_apps.anzeigename(name)[:16], 0, 13, 1)
         text = "%s: %s" % (type(e).__name__, e)
         for i in range(3):
             oled.text(text[i * 16:(i + 1) * 16], 0, 25 + i * 9, 1)
-        oled.text("S5 = Galerie", 16, 56, 1)
+        oled.text("S5 = Gallery", 16, 56, 1)
         oled.show()
     except Exception:
         pass
@@ -380,7 +393,10 @@ def fehler_zeigen(name, e):
 #  START
 # =====================================================================
 def main():
+    hub_apps.pakete_retten()
     name = lies(START_DATEI)
+    if sys.modules.get("_hub_boot", {}).get("trial"):
+        name = ""  # firmware trial must reach the gallery before any game
     if name:
         # Startauftrag sofort loeschen: stuerzt das Spiel ab oder wird
         # das Board neu gestartet, kommt man in der Galerie raus
