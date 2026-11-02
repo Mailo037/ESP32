@@ -45,11 +45,29 @@ for _datei, _modus in FUNK_MODI:
         break
     except OSError:
         pass
+# Ohne eigenes WLAN einmal pro Einschalten nach einem Repeater suchen. Das
+# RTC-Memory ueberlebt Soft-Resets (nach jedem Spiel) und machine.reset(),
+# wird aber beim Ausschalten geleert - so sucht das Board nicht nach jedem Spiel.
+if not FUNK_MODUS:
+    try:
+        os.stat("/hub_online.json")
+    except OSError:
+        try:
+            import machine
+            _rtc = machine.RTC()
+            if _rtc.memory() != b"hub-suche":
+                _rtc.memory(b"hub-suche")
+                FUNK_MODUS = "auto"
+        except Exception:
+            pass
 if FUNK_MODUS:
     gc.collect()
     import network
     network.WLAN(network.AP_IF if FUNK_MODUS == "wlan" else network.STA_IF).active(True)
-    gc.collect()
+    # Nur das schlanke Modul - hub_apps/hub_online passen jetzt nicht mehr
+    # daneben (MemoryError beim Kompilieren). Endet mit einem Neustart.
+    import hub_update
+    hub_update.funk_modus(FUNK_MODUS)
 
 import machine
 import time
@@ -414,37 +432,7 @@ def fehler_zeigen(name, e):
 # =====================================================================
 #  START
 # =====================================================================
-def funk_modus(modus):
-    """Einer der schlanken Modi; danach immer Neustart in die Galerie."""
-    oled = hub_apps.oled_neu()
-    ein = hub_apps.Eingabe()
-    try:
-        if modus == "wlan":
-            hub_online.wlan_einrichten(oled, ein, fragen=False)
-        elif modus == "suche":
-            hub_online.repeater_einrichten(oled, ein)
-        else:
-            k = hub_online.konfig_lesen()
-            if not k or k.get("modus") == "repeater":
-                raise OSError("Needs own Wi-Fi")
-            hub_apps.meldung(oled, "Repeater", "connecting ...")
-            netz = hub_online.Netz(k, 86400000)
-            try:
-                netz.verbinden()
-                hub_online.repeater_betreiben(oled, ein, netz)
-            finally:
-                netz.trennen()
-    except Exception as e:
-        hub_apps.fehler_dialog(oled, ein, "Wi-Fi", e)
-    hub_apps.meldung(oled, "Restarting ...")
-    time.sleep_ms(300)
-    machine.reset()
-
-
 def main():
-    if FUNK_MODUS:
-        funk_modus(FUNK_MODUS)
-        return
     hub_apps.pakete_retten()
     name = lies(START_DATEI)
     if sys.modules.get("_hub_boot", {}).get("trial"):
