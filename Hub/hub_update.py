@@ -269,7 +269,7 @@ def funk_modus(modus):
             if repeater_suchen(auto=True):
                 ha.meldung(oled, "Online via", "repeater")
                 time.sleep_ms(1000)
-        if modus == "wlan":
+        elif modus == "wlan":
             wlan_einrichten(oled, ein)
         elif modus == "suche":
             repeater_einrichten(oled, ein)
