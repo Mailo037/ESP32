@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP-Hub USB Wi-Fi</title>
+<meta name="description" content="Set up Wi-Fi on an ESP-Hub board over USB, without leaving your own network.">
+<style>
+  :root {
+    --bg: #f6f6f4; --card: #ffffff; --text: #1b1b1a; --muted: #5d5d58;
+    --line: #dcdcd6; --accent: #1f6f5c; --accent-text: #ffffff; --bad: #b3261e; --good: #1f6f5c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141413; --card: #1e1e1c; --text: #ecece8; --muted: #a3a39c;
+      --line: #34342f; --accent: #5cc3a6; --accent-text: #0d1f1a; --bad: #f2867e; --good: #5cc3a6;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 34rem; margin: 0 auto; padding: 2rem 16px 3rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+  .lead { color: var(--muted); margin: 0 0 1.5rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+  .card h2 { font-size: 1.05rem; margin: 0 0 .75rem; }
+  label { display: block; font-weight: 600; margin: .9rem 0 .3rem; }
+  input[type=text], input[type=password] { width: 100%; font: inherit; padding: .6rem .7rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
+  .check { display: flex; gap: .5rem; align-items: center; font-weight: 400; margin-top: .5rem; }
+  button { font: inherit; font-weight: 600; padding: .65rem 1rem; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text); cursor: pointer; }
+  button.second { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; gap: .6rem; flex-wrap: wrap; margin-top: 1rem; }
+  #status { min-height: 1.5em; font-weight: 600; }
+  #status.bad { color: var(--bad); } #status.good { color: var(--good); }
+  #netze { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; }
+  #netze button { font-weight: 400; padding: .35rem .6rem; background: transparent; color: var(--text); border-color: var(--line); }
+  ol { padding-left: 1.2rem; margin: 0; } li { margin: .25rem 0; }
+  .muted { color: var(--muted); font-size: .92rem; }
+  details pre { white-space: pre-wrap; word-break: break-all; font-size: .8rem; max-height: 14rem; overflow: auto; background: var(--bg); padding: .6rem; border-radius: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Wi-Fi over USB</h1>
+  <p class="lead">Set up Wi-Fi on your ESP-Hub board through the USB cable. Your computer stays on its own network.</p>
+
+  <div class="card" id="nosupport" hidden>
+    <h2>This browser cannot talk to USB devices</h2>
+    <p>Open this page in Chrome or Edge on a computer. Safari, Firefox and phones do not support Web Serial.</p>
+  </div>
+
+  <div class="card">
+    <h2>1. Connect the board</h2>
+    <ol>
+      <li>Plug the board in with a USB data cable.</li>
+      <li>Close Thonny, serial monitors and other tabs that use the board.</li>
+      <li>Click Connect and pick the board (CP210x, CH340 or USB serial).</li>
+    </ol>
+    <div class="row">
+      <button id="verbinden">Connect</button>
+      <button id="suchen" class="second" disabled>Scan networks</button>
+    </div>
+    <div id="netze"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. Enter your Wi-Fi</h2>
+    <label for="wlan">Wi-Fi name</label>
+    <input type="text" id="wlan" maxlength="32" autocomplete="off" spellcheck="false">
+    <label for="pw">Wi-Fi password</label>
+    <input type="password" id="pw" maxlength="63" autocomplete="off">
+    <label class="check"><input type="checkbox" id="zeigen"> Show password</label>
+    <p class="muted">The board only supports 2.4 GHz networks. Leave the password empty for open Wi-Fi.</p>
+    <div class="row">
+      <button id="speichern" disabled>Test and save</button>
+    </div>
+  </div>
+
+  <p id="status" role="status" aria-live="polite"></p>
+  <details><summary class="muted">Serial log</summary><pre id="log"></pre></details>
+</main>
+<script>
+"use strict";
+// MicroPython raw REPL over Web Serial, the same way mpremote does it:
+// Ctrl-C stops the Hub, Ctrl-A enters raw REPL, Ctrl-D soft-resets WITHOUT
+// running main.py (clean memory for the Wi-Fi driver), then code + Ctrl-D runs.
+const $ = (id) => document.getElementById(id);
+const enc = new TextEncoder(), dec = new TextDecoder();
+let port = null, reader = null, writer = null, puffer = "";
+
+if (!("serial" in navigator)) $("nosupport").hidden = false;
+
+function status(text, art) { const s = $("status"); s.textContent = text; s.className = art || ""; }
+function log(text) { const l = $("log"); l.textContent = (l.textContent + text).slice(-6000); }
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function lesen() {
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const t = dec.decode(value, { stream: true });
+      puffer += t; log(t);
+    }
+  } catch (e) { /* port closed */ }
+}
+
+async function senden(text) { await writer.write(enc.encode(text)); }
+
+async function warten(marke, ms) {
+  const ende = Date.now() + ms;
+  while (Date.now() < ende) {
+    const i = puffer.indexOf(marke);
+    if (i >= 0) { const vorher = puffer.slice(0, i); puffer = puffer.slice(i + marke.length); return vorher; }
+    await pause(30);
+  }
+  throw new Error("Board did not answer (" + JSON.stringify(marke) + ")");
+}
+
+async function rawRepl() {
+  // Stop whatever runs (gallery, game, radio mode) and enter a clean raw REPL
+  for (let i = 0; i < 3; i++) {
+    for (let k = 0; k < 10; k++) { await senden("\x03"); await pause(80); }
+    puffer = "";
+    await senden("\x01");
+    try { await warten("raw REPL; CTRL-B to exit\r\n>", 1500); break; }
+    catch (e) { if (i === 2) throw new Error("Could not stop the Hub. Press the EN button on the board and try again."); }
+  }
+  await senden("\x04");                       // soft reset in raw REPL: main.py does not run
+  await warten("soft reboot", 4000);
+  await warten("raw REPL; CTRL-B to exit\r\n>", 4000);
+}
+
+async function ausfuehren(code, ms) {
+  await senden(code);
+  await senden("\x04");
+  await warten("OK", 3000);
+  const ausgabe = await warten("\x04", ms);
+  const fehler = await warten("\x04", 2000);
+  await warten(">", 2000);
+  if (fehler.trim()) throw new Error(fehler.trim().split("\n").pop());
+  return ausgabe;
+}
+
+async function verbinden() {
+  try {
+    port = await navigator.serial.requestPort({});
+    await port.open({ baudRate: 115200 });
+    // Release EN/IO0 of the auto-reset circuit so the board runs normally
+    try { await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch (e) {}
+    reader = port.readable.getReader();
+    writer = port.writable.getWriter();
+    lesen();
+    status("Connecting to the board ...");
+    await pause(1500);
+    await rawRepl();
+    status("Board connected.", "good");
+    $("verbinden").disabled = true; $("suchen").disabled = false; $("speichern").disabled = false;
+    netzeSuchen();
+  } catch (e) {
+    status(e.message || String(e), "bad");
+    await trennen();
+  }
+}
+
+async function trennen() {
+  try { if (reader) { await reader.cancel(); reader.releaseLock(); } } catch (e) {}
+  try { if (writer) writer.releaseLock(); } catch (e) {}
+  try { if (port) await port.close(); } catch (e) {}
+  port = reader = writer = null;
+  $("verbinden").disabled = false; $("suchen").disabled = true; $("speichern").disabled = true;
+}
+
+async function netzeSuchen() {
+  $("suchen").disabled = true;
+  status("Scanning for Wi-Fi networks ...");
+  try {
+    const out = await ausfuehren(
+      "import network, json\n" +
+      "s = network.WLAN(network.STA_IF)\ns.active(True)\n" +
+      "r = []\n" +
+      "for x in sorted(s.scan(), key=lambda x: -x[3]):\n" +
+      "    try:\n        r.append(x[0].decode())\n    except Exception:\n        pass\n" +
+      "s.active(False)\nprint(json.dumps([x for x in r if x]))\n", 15000);
+    const namen = [...new Set(JSON.parse(out.trim().split("\n").pop()))];
+    const box = $("netze"); box.textContent = "";
+    for (const n of namen.slice(0, 15)) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = n;
+      b.onclick = () => { $("wlan").value = n; $("pw").focus(); };
+      box.appendChild(b);
+    }
+    status(namen.length ? "Pick your network or type its name." : "The board sees no networks. It only supports 2.4 GHz.", namen.length ? "" : "bad");
+  } catch (e) {
+    status("Scan failed: " + e.message, "bad");
+  }
+  $("suchen").disabled = false;
+}
+
+async function speichern() {
+  const wlan = $("wlan").value, pw = $("pw").value;
+  if (!wlan) { status("Enter the Wi-Fi name.", "bad"); return; }
+  if (new TextEncoder().encode(wlan).length > 32 || new TextEncoder().encode(pw).length > 63) { status("Name or password is too long.", "bad"); return; }
+  $("speichern").disabled = true; $("suchen").disabled = true;
+  status("Testing the connection ...");
+  try {
+    // JSON string literals are valid Python string literals
+    const out = await ausfuehren(
+      "import network, time, json, os\n" +
+      "W = " + JSON.stringify(wlan) + "\nP = " + JSON.stringify(pw) + "\n" +
+      "s = network.WLAN(network.STA_IF)\ns.active(True)\ntry:\n    s.disconnect()\nexcept OSError:\n    pass\n" +
+      "s.connect(W, P)\nt = time.ticks_ms()\n" +
+      "while not s.isconnected() and time.ticks_diff(time.ticks_ms(), t) < 12000:\n    time.sleep_ms(100)\n" +
+      "if s.isconnected():\n" +
+      "    try:\n        k = json.load(open('/hub_online.json'))\n    except Exception:\n        k = {}\n" +
+      "    if not k.get('url'):\n        k = {'url': 'https://esphub-steel.vercel.app', 'auth': ''}\n" +
+      "    k['wlan'] = W\n    k['passwort'] = P\n    k.pop('modus', None)\n    k.pop('auto', None)\n" +
+      "    f = open('/hub_online.json.neu', 'w')\n    json.dump(k, f)\n    f.close()\n" +
+      "    os.rename('/hub_online.json.neu', '/hub_online.json')\n    print('SAVED')\n" +
+      "else:\n" +
+      "    st = s.status()\n" +
+      "    print('FAIL', 'PW' if st == getattr(network, 'STAT_WRONG_PASSWORD', -1) else 'NOAP' if st == getattr(network, 'STAT_NO_AP_FOUND', -1) else st)\n" +
+      "s.active(False)\n", 25000);
+    const zeile = out.trim().split("\n").pop().trim();
+    if (zeile === "SAVED") {
+      status("Wi-Fi saved. The board restarts now. Then open Board info > Sync now.", "good");
+      await senden("\x02");                   // leave raw REPL
+      await pause(200);
+      await senden("import machine; machine.reset()\r");
+      await pause(500);
+      await trennen();
+      return;
+    }
+    status(zeile.includes("PW") ? "Wrong Wi-Fi password. Please try again."
+         : zeile.includes("NOAP") ? "Network not found. Check the name and that it is a 2.4 GHz network."
+         : "Could not connect (" + zeile + "). Please try again.", "bad");
+  } catch (e) {
+    status(e.message, "bad");
+  }
+  $("speichern").disabled = false; $("suchen").disabled = false;
+}
+
+$("verbinden").onclick = verbinden;
+$("suchen").onclick = netzeSuchen;
+$("speichern").onclick = speichern;
+$("zeigen").onchange = (e) => { $("pw").type = e.target.checked ? "text" : "password"; };
+</script>
+</body>
+</html>
