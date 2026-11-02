@@ -103,6 +103,19 @@ if FUNK_MODUS:
     import machine
     machine.reset()
 
+# Mit eingetragenem WLAN (oder Repeater) den WLAN-Treiber gleich hier starten
+# und danach nie mehr ausschalten, nur trennen: Spaeter, neben Galerie und
+# Hub-Modulen, bekommt er keinen Speicher mehr ("Wifi Out of Memory" bei
+# Sync now, Store, Koppeln). Spiele mit ESP-NOW brauchen ihn ohnehin.
+try:
+    os.stat("/hub_online.json")
+    import network
+    network.WLAN(network.STA_IF).active(True)
+    gc.collect()
+except Exception as e:
+    if not isinstance(e, OSError) or e.args[0] != 2:     # 2 = ENOENT: kein WLAN eingetragen
+        print("Wi-Fi driver:", e)
+
 import machine
 import time
 from machine import Pin
@@ -174,6 +187,7 @@ class _Sandbox:
         self.pause_ms = 0           # Zeit im Menue - wird dem Spiel verschwiegen
         self.oled = None            # das Display-Objekt des Spiels
         self.module_vorher = set()
+        self.funk_vorher = (False, None)
 
     # ---- Dateien: alles landet in /daten/<Spiel>/ -------------------
     def pfad(self, p):
@@ -292,11 +306,15 @@ class _Sandbox:
 
     def nutzung(self):
         # Eingebaute Module (espnow, socket) stehen auf dem ESP32 nicht in
-        # sys.modules - Funk erkennt man daran, dass das WLAN-Modul an ist
-        # (der Hub schaltet es vor dem Spiel aus)
+        # sys.modules. Der WLAN-Treiber bleibt an, wenn WLAN eingetragen ist -
+        # Funk erkennt man daran, dass das Spiel ihn eingeschaltet, verbunden,
+        # den Kanal gewechselt oder einen Access Point gestartet hat.
         try:
             import network
-            funk = network.WLAN(network.STA_IF).active() or network.WLAN(network.AP_IF).active()
+            sta = network.WLAN(network.STA_IF)
+            funk = (network.WLAN(network.AP_IF).active() or sta.isconnected()
+                    or sta.active() != self.funk_vorher[0]
+                    or (sta.active() and sta.config("channel") != self.funk_vorher[1]))
         except Exception:
             funk = False
         web = any(n in sys.modules and n not in self.module_vorher for n in ("requests", "urequests"))
@@ -361,6 +379,12 @@ class _Sandbox:
             if hub_apps.groesse(paket + "/" + driver + ".py") or hub_apps.groesse(paket + "/lib/" + driver + ".py"):
                 sys.modules.pop(driver, None)
         self.module_vorher = set(sys.modules)     # was das Spiel selbst laedt, zaehlt
+        try:
+            import network
+            sta = network.WLAN(network.STA_IF)
+            self.funk_vorher = (sta.active(), sta.config("channel") if sta.active() else None)
+        except Exception:
+            self.funk_vorher = (False, None)
         self.display_merken()
         z = self.zeit_modul()
         o = self.os_modul()
