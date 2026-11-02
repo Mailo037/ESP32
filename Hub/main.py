@@ -60,14 +60,48 @@ if not FUNK_MODUS:
                 FUNK_MODUS = "auto"
         except Exception:
             pass
+
+
+def _blockweise(pfad):
+    """Modul Block fuer Block ausfuehren statt importieren. Ein Import
+    kompiliert die ganze Datei auf einmal; der Spitzenbedarf laesst den
+    Python-Heap in den Speicher der System-Treiber wachsen (abort, kein
+    Speicher fuer I2C). So braucht es nur so viel wie der groesste Block."""
+    ns = {"__name__": "hub_update"}
+    block = []
+    with open(pfad) as f:
+        while True:
+            zeile = f.readline()
+            if not zeile or (block and zeile[0] not in " \t\r\n#)]}"):
+                if block:
+                    exec("".join(block), ns)
+                    block = []
+                    gc.collect()
+                if not zeile:
+                    return ns
+            block.append(zeile)
+
+
 if FUNK_MODUS:
     gc.collect()
-    import network
-    network.WLAN(network.AP_IF if FUNK_MODUS == "wlan" else network.STA_IF).active(True)
-    # Nur das schlanke Modul - hub_apps/hub_online passen jetzt nicht mehr
-    # daneben (MemoryError beim Kompilieren). Endet mit einem Neustart.
-    import hub_update
-    hub_update.funk_modus(FUNK_MODUS)
+    try:
+        # Display zuerst: der I2C-Treiber braucht internen Speicher, den
+        # sonst der WLAN-Treiber belegt ("no memory for i2c master bus")
+        from machine import Pin, I2C
+        from ssd1306 import SSD1306_I2C
+        _oled = SSD1306_I2C(128, 64, I2C(0, scl=Pin(22), sda=Pin(21), freq=400000))
+        import network
+        network.WLAN(network.AP_IF if FUNK_MODUS == "wlan" else network.STA_IF).active(True)
+        gc.collect()
+        # Nur der schlanke Teil - hub_apps/hub_online passen nicht neben den
+        # Treiber. funk_modus() endet selbst mit einem Neustart.
+        _blockweise("/hub_update.py")["funk_modus"](FUNK_MODUS, _oled)
+    except Exception as e:
+        print("Radio mode failed:", e)
+    # Nie im REPL stehen bleiben: Die Merkdatei ist weg bzw. das RTC-Memory
+    # gesetzt, der naechste Start laeuft normal in die Galerie.
+    import machine
+    machine.reset()
 
 import machine
 import time

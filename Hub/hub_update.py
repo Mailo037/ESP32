@@ -255,13 +255,14 @@ class _Netz:
         self.req = requests
 
 
-def funk_modus(modus):
-    """Von main.py aufgerufen, Treiber laeuft schon. Jeder Modus endet mit
-    einem Neustart in die normale Galerie (ohne Treiber im Speicher)."""
+def funk_modus(modus, oled=None):
+    """Von main.py aufgerufen, Treiber laeuft schon, das Display ist schon
+    angelegt (vor dem Treiber). Jeder Modus endet mit einem Neustart in die
+    normale Galerie (ohne Treiber im Speicher)."""
     import gc
     gc.collect()
     print("Hub radio mode:", modus, "free:", gc.mem_free())
-    oled = _oled()
+    oled = oled or _oled()
     ein = Tasten()
     try:
         if modus == "auto":
