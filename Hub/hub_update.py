@@ -395,6 +395,32 @@ def _wlan_fehler(sta):
     return "Could not connect to this Wi-Fi."
 
 
+def _netze_suchen(sta):
+    """WLANs in Reichweite (nur 2,4 GHz - mehr kann der ESP32 nicht), staerkste
+    zuerst. Auf der Setup-Seite gegen Tippfehler und als Hinweis bei 5 GHz."""
+    try:
+        sta.active(True)
+        gefunden = sta.scan()
+    except Exception as e:
+        print("Setup: scan failed:", e)
+        return []
+    finally:
+        try:
+            sta.active(False)
+        except Exception:
+            pass
+    namen = []
+    for n in sorted(gefunden, key=lambda n: -n[3]):
+        try:
+            s = n[0].decode()
+        except Exception:
+            continue
+        if s and s not in namen:
+            namen.append(s)
+    print("Setup: networks found:", len(namen))
+    return namen[:15]
+
+
 def _setup_anfrage(client, ip, csrf, stand=None):
     """Read one request. Returns (page, (wlan, passwort) or None).
     stand: {"fehler": letzter Fehler, "wlan": zuletzt versuchter Name}."""
@@ -449,7 +475,11 @@ def _setup_anfrage(client, ip, csrf, stand=None):
                 'reconnect to it.</p><a href="/">Try again</a>'), (wlan, pw)
     if method == "GET" and path == "/":
         fehler = ('<p style="color:#b00020"><b>' + _html(stand["fehler"]) + "</b> Please try again.</p>") if stand.get("fehler") else ""
-        return ('<h1>Set up ESP-Hub</h1>' + fehler + '<form method="post"><input type="hidden" name="csrf" value="' + csrf + '"><label>Wi-Fi name<input name="wlan" maxlength="32" required autocomplete="off" value="' + _html(stand.get("wlan", "")) + '"></label><label>Wi-Fi password<input type="password" id="pw" name="passwort" maxlength="63" autocomplete="new-password"></label><label style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" style="width:auto;margin:0" onchange="document.getElementById(\'pw\').type=this.checked?\'text\':\'password\'">Show password</label><button>Connect and save</button></form><p>Leave the password blank for open Wi-Fi. Press S4 on the board to cancel.</p>'), None
+        netze = stand.get("netze") or []
+        liste = '<datalist id="netze">' + "".join('<option value="' + _html(n) + '">' for n in netze) + "</datalist>"
+        fehler += ("<p>Board sees: " + ", ".join(_html(n) for n in netze) + "</p>") if netze else \
+            "<p>The board sees no Wi-Fi networks. It only supports 2.4 GHz.</p>"
+        return ('<h1>Set up ESP-Hub</h1>' + fehler + '<form method="post"><input type="hidden" name="csrf" value="' + csrf + '"><label>Wi-Fi name<input name="wlan" list="netze" maxlength="32" required autocomplete="off" value="' + _html(stand.get("wlan", "")) + '"></label>' + liste + '<label>Wi-Fi password<input type="password" id="pw" name="passwort" maxlength="63" autocomplete="new-password"></label><label style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" style="width:auto;margin:0" onchange="document.getElementById(\'pw\').type=this.checked?\'text\':\'password\'">Show password</label><button>Connect and save</button></form><p>Leave the password blank for open Wi-Fi. Press S4 on the board to cancel.</p>'), None
     raise ValueError("Unknown page")
 
 
@@ -473,6 +503,7 @@ def wlan_einrichten(oled, ein):
         ap.active(True)
         ap.config(essid=ssid, password=password, authmode=3)
         ip = ap.ifconfig()[0]
+        stand["netze"] = _netze_suchen(sta)
         server = socket.socket()
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((ip, 80))
@@ -575,7 +606,7 @@ def wlan_einrichten(oled, ein):
                 sta.disconnect()
             except OSError:
                 pass
-            sta.active(False)
+            stand["netze"] = _netze_suchen(sta) or stand.get("netze")
             _setup_bildschirm(oled, ssid, password, ip, rest, "Failed - retry")
             time.sleep_ms(1500)
             shown = None
