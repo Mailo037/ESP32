@@ -404,6 +404,11 @@ def _netze_suchen(sta):
     except Exception as e:
         print("Setup: scan failed:", e)
         return []
+    finally:
+        try:
+            sta.active(False)
+        except Exception:
+            pass
     namen = []
     for n in sorted(gefunden, key=lambda n: -n[3]):
         try:
@@ -492,6 +497,7 @@ def wlan_einrichten(oled, ein):
     server = None
     sta = network.WLAN(network.STA_IF)
     try:
+        sta.active(False)
         # Switch the AP on before configuring it: MicroPython builds differ
         # in whether config() works while the Wi-Fi driver is stopped.
         ap.active(True)
@@ -576,20 +582,8 @@ def wlan_einrichten(oled, ein):
                 continue
             # Verify the new network before replacing the old configuration.
             _setup_bildschirm(oled, ssid, password, ip, rest, "Checking Wi-Fi")
-            try:
-                sta.active(True)
-                sta.connect(daten[0], daten[1])
-            except OSError as e:
-                # Nicht abstuerzen: Grund auf der Webseite, Setup bleibt offen
-                print("Setup: home Wi-Fi start failed:", e)
-                stand["fehler"] = ("The board ran out of memory. Restart it and try again, or use Wi-Fi over USB "
-                                   "(mailo037.github.io/ESP32/usb-wifi)." if "memory" in str(e).lower()
-                                   else "Could not start Wi-Fi on the board.")
-                stand["wlan"] = daten[0]
-                _setup_bildschirm(oled, ssid, password, ip, rest, "Failed - retry")
-                time.sleep_ms(1500)
-                shown = None
-                continue
+            sta.active(True)
+            sta.connect(daten[0], daten[1])
             begonnen = time.ticks_ms()
             while not sta.isconnected() and time.ticks_diff(time.ticks_ms(), begonnen) < 10000:
                 if ein.lesen() == "zurueck":
@@ -919,7 +913,11 @@ class RepeaterClient:
 
     def beenden(self):
         if self.funk:
-            self.funk.aus()         # nur ESP-NOW aus, der WLAN-Treiber bleibt an
+            self.funk.aus()
+            try:
+                self.funk.sta.active(False)
+            except Exception:
+                pass
         self.funk = None
 
 

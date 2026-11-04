@@ -181,13 +181,7 @@ class Netz:
     def _wlan(self):
         import network
         self.sta = network.WLAN(network.STA_IF)
-        try:
-            self.sta.active(True)
-        except OSError as e:
-            if "memory" in str(e).lower():
-                # Treiber war beim Start nicht an (WLAN gerade erst eingetragen)
-                raise OSError("Restart the board once to go online")
-            raise
+        self.sta.active(True)
         if not self.sta.isconnected():
             self.sta.connect(self.k.get("wlan", ""), self.k.get("passwort", ""))
             start = time.ticks_ms()
@@ -203,9 +197,8 @@ class Netz:
         self.req = requests
 
     def trennen(self):
-        # WLAN trennen und requests/ssl wegraeumen: Spiele wie Pong brauchen
-        # danach ESP-NOW auf ihrem eigenen Kanal und den ganzen RAM. Der
-        # Treiber bleibt an - neu starten koennte er neben dem Hub nicht mehr.
+        # WLAN aus und requests/ssl wegraeumen: Spiele wie Pong brauchen
+        # danach ESP-NOW auf ihrem eigenen Kanal und den ganzen RAM
         if self.req is not None and hasattr(self.req, "beenden"):
             self.req.beenden()
         self.req = None
@@ -216,6 +209,7 @@ class Netz:
         if self.sta is not None:
             try:
                 self.sta.disconnect()
+                self.sta.active(False)
             except Exception:
                 pass
         self.sta = None
