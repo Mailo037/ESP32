@@ -9,7 +9,7 @@ from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 
 ROOT = Path(__file__).resolve().parent
-FILES = ("main.py", "hub_apps.py", "hub_galerie.py", "hub_online.py", "hub_update.py", "ssd1306.py", "bmp280.py", "hub_version.json")
+FILES = ("main.py", "hub_main.mpy", "hub_apps.mpy", "hub_galerie.mpy", "hub_online.mpy", "hub_update.mpy", "ssd1306.py", "bmp280.py", "hub_version.json")
 
 
 def committed(name):

@@ -6,7 +6,7 @@ import json
 
 UPDATE = "/hubupdate"
 PENDING = UPDATE + "/pending.json"
-FILES = ("main.py", "hub_apps.py", "hub_galerie.py", "hub_online.py", "hub_update.py", "ssd1306.py", "bmp280.py", "hub_version.json")
+FILES = ("main.py", "hub_main.mpy", "hub_apps.mpy", "hub_galerie.mpy", "hub_online.mpy", "hub_update.mpy", "ssd1306.py", "bmp280.py", "hub_version.json")
 BACKUP = "/hubbackup"
 TRIAL = BACKUP + "/trial.json"
 STATE = {}

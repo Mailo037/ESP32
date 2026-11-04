@@ -34,7 +34,13 @@ def main():
     args = sys.argv[1:]
     port = args.pop(0) if args and not args[0].endswith(".py") else "auto"
 
-    kopien = [(HUB / n, n) for n in ("boot.py", "main.py", "hub_apps.py", "hub_galerie.py", "hub_online.py", "hub_update.py", "ssd1306.py", "bmp280.py", "hub_version.json")]
+    # Hub-Module vorkompiliert (.mpy, siehe mpy_bauen.py): sonst fehlt beim
+    # Kompilieren auf dem Board der Speicher fuer den WLAN-Treiber
+    kopien = [(HUB / n, n) for n in ("boot.py", "main.py", "hub_main.mpy", "hub_apps.mpy", "hub_galerie.mpy", "hub_online.mpy",
+                                     "hub_update.mpy", "ssd1306.py", "bmp280.py", "hub_version.json")]
+    for quelle, ziel in kopien:
+        if not quelle.exists():
+            sys.exit("%s fehlt - erst python mpy_bauen.py ausfuehren" % ziel)
     if (HUB / "hub_online.json").exists():          # Online-Speicher (nicht im Repo)
         kopien.append((HUB / "hub_online.json", "hub_online.json"))
     for ordner in sorted(REPO.iterdir()):
@@ -58,6 +64,9 @@ def main():
                "try:\n d = json.load(open('/hubdaten/_installiert.json'))\nexcept Exception:\n d = {}\n"
                "d.update(%s)\n"
                "f = open('/hubdaten/_installiert.json', 'w'); json.dump(d, f); f.close()\n"
+               "# Alte Hub-Module als Quelltext entfernen: .py hat beim Import Vorrang vor .mpy\n"
+               "for p in ('/hub_apps.py', '/hub_galerie.py', '/hub_online.py', '/hub_update.py', '/hub_main.py'):\n"
+               " try:\n  os.remove(p)\n except OSError:\n  pass\n"
                "# A complete USB install supersedes any interrupted OTA trial.\n"
                "for p in ('/hubupdate/pending.json', '/hubbackup/trial.json', '/hubbackup/manifest.json', '/hubbackup/fehlgeschlagen.json'):\n"
                " try:\n  os.remove(p)\n except OSError:\n  pass\n"

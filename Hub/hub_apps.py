@@ -22,7 +22,7 @@ CACHE = "/hubdaten"
 NUTZUNG = CACHE + "/_nutzung.json"
 INSTALLIERT = CACHE + "/_installiert.json"   # Pruefsummen vertrauenswuerdiger Apps
 PAKETE = "/apps"
-HUB_DATEIEN = ("main.py", "hub_apps.py", "hub_galerie.py", "hub_online.py", "hub_update.py", "ssd1306.py", "bmp280.py", "hub_version.json")
+HUB_DATEIEN = ("main.py", "hub_main.mpy", "hub_apps.mpy", "hub_galerie.mpy", "hub_online.mpy", "hub_update.mpy", "ssd1306.py", "bmp280.py", "hub_version.json")
 TASTEN_AKTIV_HIGH = True
 AN = 1 if TASTEN_AKTIV_HIGH else 0
 
