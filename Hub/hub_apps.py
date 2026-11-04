@@ -125,8 +125,7 @@ def kompatibilitaet(app):
 
 def fehler_dialog(oled, ein, titel, error):
     import hub_online
-    hub_online.diagnose(error)
-    text = hub_online._json_lesen(hub_online.DIAGNOSE, {}).get("fehler", "Error")
+    text = hub_online.diagnose(error, offline=False).get("fehler", "Error")
     lines = [text[i:i + 16] for i in range(0, len(text), 16)]
     while menue(oled, ein, titel, [], lines + ["OK"]) not in (-1, len(lines)):
         pass

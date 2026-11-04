@@ -36,7 +36,9 @@ DIAGNOSE = CACHE + "/_diagnose.json"
 LETZTER_SYNC = None
 
 
-def diagnose(fehler=None, erfolg=False):
+def diagnose(fehler=None, erfolg=False, offline=True):
+    """Letzten Fehler/Erfolg merken. offline=False: Fehler hat nichts mit
+    der Verbindung zu tun (z. B. ein abgestuerztes Spiel)."""
     global LETZTER_SYNC
     d = _json_lesen(DIAGNOSE, {})
     if fehler is not None:
@@ -46,10 +48,17 @@ def diagnose(fehler=None, erfolg=False):
         d["sync"] = time.time()
         LETZTER_SYNC = time.ticks_ms()
         d["status"] = "online"
-    elif fehler is not None:
+    elif fehler is not None and offline:
         d["status"] = "offline"
     _json_schreiben(DIAGNOSE, d)
     return d
+
+
+def verbindung():
+    """Echter Stand statt 'WLAN eingetragen': "online" nach dem letzten
+    erfolgreichen Abgleich, "offline" nach einem Fehler, sonst None
+    (noch nie geprueft, z. B. direkt nach dem Einrichten)."""
+    return _json_lesen(DIAGNOSE, {}).get("status")
 
 
 def offene_daten():

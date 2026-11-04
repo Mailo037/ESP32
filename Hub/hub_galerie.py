@@ -48,10 +48,16 @@ def pfeil(oled, x, y, c):
     oled.pixel(x + 3, y, c)
 
 
-def wolke(oled, x, y, c):
+def wolke(oled, x, y, c, voll=True):
+    """Volle Wolke: zuletzt wirklich online. Leere Wolke: WLAN eingetragen,
+    aber noch nicht geprueft oder zuletzt keine Verbindung."""
     oled.fill_rect(x + 3, y, 4, 2, c)
     oled.fill_rect(x + 1, y + 2, 9, 3, c)
     oled.fill_rect(x, y + 4, 11, 3, c)
+    if not voll:
+        oled.fill_rect(x + 4, y + 1, 2, 1, 1 - c)
+        oled.fill_rect(x + 2, y + 3, 7, 1, 1 - c)
+        oled.fill_rect(x + 1, y + 4, 9, 2, 1 - c)
 
 
 def lies(datei):
@@ -102,7 +108,7 @@ def galerie(start_datei, neustart):
     def zeichnen():
         ha.kopfzeile(oled, "ESP-HUB", ha.kb(frei) if frei else "")
         if online:
-            wolke(oled, 62, 2, 0)
+            wolke(oled, 62, 2, 0, hub_online.verbindung() == "online")
         for i in range(ZEILEN):
             n = oben + i
             if n >= len(eintraege):
@@ -151,7 +157,8 @@ def galerie(start_datei, neustart):
     while True:
         # Local navigation and game starts always take priority. Automatic online
         # work only runs after 30 s without input, then at most every five minutes.
-        if online and time.ticks_diff(time.ticks_ms(), aktiv) >= 30000 and (erster_abgleich or time.ticks_diff(time.ticks_ms(), firmware_check) >= 300000):
+        # The first check comes after 5 s so the cloud icon soon shows the real state.
+        if online and time.ticks_diff(time.ticks_ms(), aktiv) >= (5000 if erster_abgleich else 30000) and (erster_abgleich or time.ticks_diff(time.ticks_ms(), firmware_check) >= 300000):
             erster_abgleich = False
             auftraege_ausfuehren(oled, automatisch=True)
             firmware_check = time.ticks_ms()
@@ -611,7 +618,9 @@ def info(oled, ein):
         konto = hub_online.board_status().get("konto")
         zeilen = ["ID " + hub_online.board_id(),
                   "Flash " + ha.kb(ha.frei()) + " RAM " + ha.kb(gc.mem_free()),
-                  status or (("Account: " + konto) if konto else ("Online: repeater" if k and k.get("modus") == "repeater" else "Online: on" if k else "Online: off"))]
+                  status or (("Account: " + konto) if konto else ("Online: off" if not k else
+                  {"online": "Online: OK", "offline": "Online: failed"}.get(hub_online.verbindung(), "Online: unchecked")
+                  + (" (rep)" if k.get("modus") == "repeater" else "")))]
         punkte = (["Hub v" + ha.HUB_VERSION, "Sync now", "Pair", "Test connection"] if k else ["Hub v" + ha.HUB_VERSION]) + ["Set up Wi-Fi"]
         if k and k.get("modus") != "repeater":
             punkte.append("Be a repeater")

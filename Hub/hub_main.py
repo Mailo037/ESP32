@@ -415,7 +415,7 @@ def spiel_starten(name):
     elif sb.aktion == "deinstall":
         hub_apps.app_loeschen(name)
     if fehler is not None:
-        hub_online.diagnose("App " + name + ": " + str(fehler))
+        hub_online.diagnose("App " + name + ": " + str(fehler), offline=False)
         fehler_zeigen(name, fehler)
     neustart()
 

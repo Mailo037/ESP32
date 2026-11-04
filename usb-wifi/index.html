@@ -216,7 +216,10 @@ async function speichern() {
       "    if not k.get('url'):\n        k = {'url': 'https://esphub-steel.vercel.app', 'auth': ''}\n" +
       "    k['wlan'] = W\n    k['passwort'] = P\n    k.pop('modus', None)\n    k.pop('auto', None)\n" +
       "    f = open('/hub_online.json.neu', 'w')\n    json.dump(k, f)\n    f.close()\n" +
-      "    os.rename('/hub_online.json.neu', '/hub_online.json')\n    print('SAVED')\n" +
+      "    os.rename('/hub_online.json.neu', '/hub_online.json')\n" +
+      "    try:\n        d = json.load(open('/hubdaten/_diagnose.json'))\n        d.pop('status', None)\n" +
+      "        f = open('/hubdaten/_diagnose.json', 'w')\n        json.dump(d, f)\n        f.close()\n    except Exception:\n        pass\n" +
+      "    print('SAVED')\n" +
       "else:\n" +
       "    st = s.status()\n" +
       "    print('FAIL', 'PW' if st == getattr(network, 'STAT_WRONG_PASSWORD', -1) else 'NOAP' if st == getattr(network, 'STAT_NO_AP_FOUND', -1) else st)\n" +

@@ -159,6 +159,18 @@ def _json_schreiben(datei, wert):
     getattr(os, "sync", lambda: None)()
 
 
+def _status_vergessen():
+    """Neue Verbindungsdaten: bis zum ersten Abgleich gilt 'nicht geprueft'
+    (sonst zeigt die Galerie noch den alten Stand als online an)."""
+    try:
+        with open(CACHE + "/_diagnose.json") as f:
+            d = json.load(f)
+        d.pop("status", None)
+        _json_schreiben(CACHE + "/_diagnose.json", d)
+    except (OSError, ValueError):
+        pass
+
+
 class Tasten:
     """Wie hub_apps.Eingabe, nur Taster: hoch, runter, ok, zurueck."""
 
@@ -596,6 +608,7 @@ def wlan_einrichten(oled, ein):
                 config.pop("modus", None)
                 config.pop("auto", None)
                 _json_schreiben(KONFIG, config)
+                _status_vergessen()
                 ha.meldung(oled, "Wi-Fi saved", "Restarting ...")
                 time.sleep_ms(800)
                 machine.reset()
@@ -1039,6 +1052,7 @@ def repeater_suchen(auto=False):
     if auto:
         config["auto"] = True
     _json_schreiben(KONFIG, config)
+    _status_vergessen()
     return kanal
 
 
