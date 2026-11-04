@@ -109,11 +109,6 @@ if FUNK_MODUS:
 # Sync now, Store, Koppeln). Spiele mit ESP-NOW brauchen ihn ohnehin.
 try:
     os.stat("/hub_online.json")
-    # I2C zuerst: der WLAN-Treiber belegt sonst den Speicher, den der
-    # I2C-Treiber fuers Display braucht ("no memory for i2c master bus").
-    # Spaetere I2C(0, ...) geben den Bus frei und legen ihn gleich gross neu an.
-    from machine import Pin, I2C
-    I2C(0, scl=Pin(22), sda=Pin(21), freq=400000)
     import network
     network.WLAN(network.STA_IF).active(True)
     gc.collect()
